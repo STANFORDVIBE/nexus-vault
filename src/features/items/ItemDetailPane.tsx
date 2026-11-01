@@ -28,11 +28,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { CardForm } from "@/features/items/CardForm";
+import { IdentityForm } from "@/features/items/IdentityForm";
+import { cardToForm, identityKindLabel, identityToForm } from "@/features/items/itemSchemas";
 import { LoginDetail } from "@/features/items/LoginDetail";
 import { LoginForm } from "@/features/items/LoginForm";
-import { EMPTY_LOGIN, type LoginFormValues } from "@/features/items/loginSchema";
+import { EMPTY_LOGIN } from "@/features/items/loginSchema";
 import { Markdown } from "@/features/items/Markdown";
 import { NoteEditor } from "@/features/items/NoteEditor";
+import { CardDetail, IdentityDetail } from "@/features/items/TypedDetails";
 import { useCopy } from "@/hooks/useCopy";
 import { useVaultQuery } from "@/hooks/useVaultQuery";
 import { formatDateTime } from "@/lib/format";
@@ -40,15 +44,22 @@ import { errorMessage } from "@/services/errors";
 import {
   deleteItemPermanently,
   getItem,
+  getItemForEdit,
   listFolders,
   moveItemToFolder,
   restoreItem,
-  revealPassword,
   setFavorite,
   trashItem,
 } from "@/services/vault";
 import { invalidate } from "@/store/session";
-import type { ItemDetail } from "@/types/vault";
+import type { ItemContent, ItemDetail, ItemType } from "@/types/vault";
+
+const TYPE_LABELS: Record<ItemType, string> = {
+  login: "Пароль",
+  secure_note: "Заметка",
+  card: "Банковская карта",
+  identity: "Документ",
+};
 
 const NO_FOLDER = "__none__";
 
@@ -87,8 +98,8 @@ export function ItemDetailPane({ id, editing, onEdit, onEditDone, onGone }: Item
   if (!item || item.id !== id) return null;
 
   if (editing && !item.deletedAt) {
-    return item.type === "login" ? (
-      <LoginEditLoader key={id} item={item} onDone={onEditDone} />
+    return item.type !== "secure_note" ? (
+      <EditLoader key={id} item={item} onDone={onEditDone} />
     ) : (
       <NoteEditor
         key={id}
@@ -108,34 +119,15 @@ export function ItemDetailPane({ id, editing, onEdit, onEditDone, onGone }: Item
   return <ItemView key={id} item={item} onEdit={onEdit} onGone={onGone} />;
 }
 
-/** Fetches the password before showing the form, so saving does not drop it. */
-function LoginEditLoader({
-  item,
-  onDone,
-}: {
-  item: Extract<ItemDetail, { type: "login" }>;
-  onDone: (id: string | null) => void;
-}) {
-  const [initial, setInitial] = useState<LoginFormValues | null>(null);
+/** Fetches the full content (with secrets) before showing the form, so saving drops nothing. */
+function EditLoader({ item, onDone }: { item: ItemDetail; onDone: (id: string | null) => void }) {
+  const [content, setContent] = useState<ItemContent | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const login = item.payload;
-    (login.hasPassword ? revealPassword(item.id) : Promise.resolve(""))
-      .then((password) => {
-        if (cancelled) return;
-        setInitial({
-          ...EMPTY_LOGIN,
-          title: login.title,
-          website: login.website ?? "",
-          username: login.username ?? "",
-          email: login.email ?? "",
-          password,
-          notes: login.notes ?? "",
-          tags: login.tags,
-          folderId: item.folderId,
-          favorite: item.favorite,
-        });
+    getItemForEdit(item.id)
+      .then((loaded) => {
+        if (!cancelled) setContent(loaded);
       })
       .catch((e: unknown) => {
         toast.error(errorMessage(e));
@@ -148,16 +140,42 @@ function LoginEditLoader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id]);
 
-  if (!initial) return null;
-  return (
-    <LoginForm
-      itemId={item.id}
-      initial={initial}
-      initialFavorite={item.favorite}
-      onSaved={onDone}
-      onCancel={() => onDone(item.id)}
-    />
-  );
+  if (!content) return null;
+  const meta = { folderId: item.folderId, favorite: item.favorite };
+  const props = {
+    itemId: item.id,
+    initialFavorite: item.favorite,
+    onSaved: onDone,
+    onCancel: () => onDone(item.id),
+  };
+  switch (content.type) {
+    case "login": {
+      const p = content.payload;
+      return (
+        <LoginForm
+          {...props}
+          initial={{
+            ...EMPTY_LOGIN,
+            ...meta,
+            title: p.title,
+            website: p.website ?? "",
+            username: p.username ?? "",
+            email: p.email ?? "",
+            password: p.password ?? "",
+            notes: p.notes ?? "",
+            tags: p.tags,
+            fields: p.fields ?? [],
+          }}
+        />
+      );
+    }
+    case "card":
+      return <CardForm {...props} initial={{ ...cardToForm(content.payload), ...meta }} />;
+    case "identity":
+      return <IdentityForm {...props} initial={{ ...identityToForm(content.payload), ...meta }} />;
+    default:
+      return null;
+  }
 }
 
 function ItemView({
@@ -183,7 +201,11 @@ function ItemView({
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg leading-tight">{title}</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{item.type === "login" ? "Пароль" : "Заметка"}</span>
+            <span>
+              {item.type === "identity" && item.payload.kind
+                ? identityKindLabel(item.payload.kind)
+                : TYPE_LABELS[item.type]}
+            </span>
             {folder && (
               <>
                 <span aria-hidden="true">·</span>
@@ -301,6 +323,10 @@ function ItemView({
         <div className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-6">
           {item.type === "login" ? (
             <LoginDetail id={item.id} login={item.payload} readOnly={trashed} />
+          ) : item.type === "card" ? (
+            <CardDetail id={item.id} payload={item.payload} readOnly={trashed} />
+          ) : item.type === "identity" ? (
+            <IdentityDetail id={item.id} payload={item.payload} readOnly={trashed} />
           ) : item.payload.content.trim() ? (
             <div className="rounded-lg border border-border bg-card px-5 py-4">
               <Markdown>{item.payload.content}</Markdown>

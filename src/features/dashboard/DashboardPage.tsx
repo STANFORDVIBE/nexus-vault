@@ -2,7 +2,9 @@ import { Link, useNavigate } from "react-router";
 import {
   ArchiveIcon,
   ClockIcon,
+  CreditCardIcon,
   DicesIcon,
+  IdCardIcon,
   KeyRoundIcon,
   LayersIcon,
   PlusIcon,
@@ -102,10 +104,12 @@ export function DashboardPage() {
         actions={actions}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Stat to="/items" icon={LayersIcon} label="Всего записей" value={data?.total} />
         <Stat to="/passwords" icon={KeyRoundIcon} label="Пароли" value={data?.logins} />
         <Stat to="/notes" icon={StickyNoteIcon} label="Заметки" value={data?.notes} />
+        <Stat to="/cards" icon={CreditCardIcon} label="Карты" value={data?.cards} />
+        <Stat to="/documents" icon={IdCardIcon} label="Документы" value={data?.identities} />
         <Stat to="/favorites" icon={StarIcon} label="Избранное" value={data?.favorites} />
       </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLinkIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { FieldRow, IconAction } from "@/features/items/FieldRow";
+import { CustomFieldsDetail, NotesBlock } from "@/features/items/TypedDetails";
 import { useCopy } from "@/hooks/useCopy";
 import { errorMessage } from "@/services/errors";
 import { openItemWebsite, revealPassword } from "@/services/vault";
@@ -106,14 +107,8 @@ export function LoginDetail({ id, login, readOnly }: LoginDetailProps) {
         <p className="text-sm text-muted-foreground">В этой записи нет данных для входа</p>
       )}
 
-      {login.notes && (
-        <div className="flex flex-col gap-1.5">
-          <div className="text-xs text-muted-foreground">Заметки</div>
-          <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
-            {login.notes}
-          </div>
-        </div>
-      )}
+      <CustomFieldsDetail id={id} fields={login.fields} readOnly={readOnly} />
+      <NotesBlock notes={login.notes} />
     </div>
   );
 }

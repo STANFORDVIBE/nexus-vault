@@ -186,4 +186,33 @@ describe("Nexus Vault app", () => {
     expect(await screen.findByText("Копия сохранена")).toBeInTheDocument();
     expect(await screen.findByText(/Сейчас хранится: 1/)).toBeInTheDocument();
   });
+
+  it("adds a card: number, CVV and hidden fields stay out of the detail view", async () => {
+    window.history.pushState({}, "", "/cards");
+    const { backend, user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+
+    await user.click(await screen.findByRole("button", { name: "Добавить" }));
+    await user.type(await screen.findByLabelText("Название"), "Моя карта");
+    await user.type(screen.getByLabelText("Номер карты"), "4276 1234 5678 9012");
+    await user.type(screen.getByLabelText("Срок действия"), "4/28");
+    await user.type(screen.getByLabelText("CVV / CVC"), "123");
+    await user.click(screen.getByRole("button", { name: "Добавить поле" }));
+    await user.type(screen.getByLabelText("Название поля 1"), "Кодовое слово");
+    await user.click(screen.getByRole("button", { name: "Сделать поле скрытым" }));
+    await user.type(screen.getByLabelText("Значение поля 1"), "капибара");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    const list = await screen.findByRole("listbox", { name: "Записи" });
+    expect(await within(list).findByText("Моя карта")).toBeInTheDocument();
+    expect(await screen.findByText("Кодовое слово")).toBeInTheDocument();
+    expect(screen.queryByText("капибара")).toBeNull();
+    expect(screen.queryByText("123")).toBeNull();
+
+    await user.click(screen.getAllByRole("button", { name: "Показать" })[0]!);
+    expect(await screen.findByText("4276 1234 5678 9012")).toBeInTheDocument();
+    const copies = screen.getAllByRole("button", { name: "Копировать" });
+    await user.click(copies[copies.length - 1]!);
+    expect(backend.clipboard.value).toBe("капибара");
+  });
 });

@@ -3,7 +3,16 @@ import { useNavigate } from "react-router";
 import { useSessionStore } from "@/store/session";
 import { useUiStore } from "@/store/ui";
 
-const LIST_ROUTES = ["/items", "/passwords", "/notes", "/favorites", "/trash", "/folders/"];
+const LIST_ROUTES = [
+  "/items",
+  "/passwords",
+  "/notes",
+  "/cards",
+  "/documents",
+  "/favorites",
+  "/trash",
+  "/folders/",
+];
 
 /** Where to open the "new item" editor so the created item shows up in the list. */
 export function newItemBase(pathname: string, type: "login" | "note"): string {

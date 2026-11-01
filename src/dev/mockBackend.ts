@@ -5,6 +5,7 @@ import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type {
   CopyField,
+  CustomField,
   GeneratorOptions,
   ItemContent,
   ItemFilter,
@@ -22,6 +23,7 @@ interface MockItem {
   createdAt: number;
   updatedAt: number;
   deletedAt: number | null;
+  passwordChangedAt?: number | null;
 }
 
 interface MockFolder {
@@ -188,16 +190,23 @@ export function createMockBackend(options: MockOptions = {}) {
 
   function summary(item: MockItem): ItemSummary {
     const p = item.content.payload;
+    const c = item.content;
     const subtitle =
-      item.content.type === "login"
-        ? (item.content.payload.username ??
-          item.content.payload.email ??
-          (item.content.payload.website ? hostOf(item.content.payload.website) : null))
-        : (item.content.payload.content
-            .split("\n")
-            .map((l) => l.trim().replace(/^[#>*\s-]+/, ""))
-            .find(Boolean)
-            ?.slice(0, 80) ?? null);
+      c.type === "login"
+        ? (c.payload.username ??
+          c.payload.email ??
+          (c.payload.website ? hostOf(c.payload.website) : null))
+        : c.type === "card"
+          ? [c.payload.number && `•••• ${c.payload.number.slice(-4)}`, c.payload.expiry]
+              .filter(Boolean)
+              .join(" · ") || null
+          : c.type === "identity"
+            ? (c.payload.fullName ?? null)
+            : (c.payload.content
+                .split("\n")
+                .map((l) => l.trim().replace(/^[#>*\s-]+/, ""))
+                .find(Boolean)
+                ?.slice(0, 80) ?? null);
     return {
       id: item.id,
       type: item.content.type,
@@ -229,6 +238,8 @@ export function createMockBackend(options: MockOptions = {}) {
       } else if (trashed) return false;
       if (filter.view === "logins" && item.content.type !== "login") return false;
       if (filter.view === "notes" && item.content.type !== "secure_note") return false;
+      if (filter.view === "cards" && item.content.type !== "card") return false;
+      if (filter.view === "identities" && item.content.type !== "identity") return false;
       if (filter.view === "favorites" && !item.favorite) return false;
       if (filter.view === "folder" && item.folderId !== filter.folderId) return false;
       const haystack = JSON.stringify(item.content.payload).toLowerCase();
@@ -254,8 +265,11 @@ export function createMockBackend(options: MockOptions = {}) {
       updatedAt: item.updatedAt,
       deletedAt: item.deletedAt,
     };
-    if (item.content.type === "login") {
-      const { password: pw, ...rest } = item.content.payload;
+    const fields = (list: CustomField[] = []) =>
+      list.map((f) => ({ label: f.label, hidden: f.hidden, value: f.hidden ? null : f.value }));
+    const c = item.content;
+    if (c.type === "login") {
+      const { password: pw, fields: custom, ...rest } = c.payload;
       return {
         ...base,
         type: "login",
@@ -266,24 +280,81 @@ export function createMockBackend(options: MockOptions = {}) {
           notes: null,
           ...rest,
           hasPassword: !!pw,
+          fields: fields(custom),
+          passwordChangedAt: item.passwordChangedAt ?? null,
         },
       };
     }
-    return { ...base, type: "secure_note", payload: item.content.payload };
+    if (c.type === "card") {
+      const p = c.payload;
+      return {
+        ...base,
+        type: "card",
+        payload: {
+          title: p.title,
+          cardholder: p.cardholder ?? null,
+          numberMasked: p.number ? `•••• ${p.number.slice(-4)}` : null,
+          expiry: p.expiry ?? null,
+          hasCvv: !!p.cvv,
+          hasPin: !!p.pin,
+          notes: p.notes ?? null,
+          tags: p.tags,
+          fields: fields(p.fields),
+        },
+      };
+    }
+    if (c.type === "identity") {
+      const p = c.payload;
+      return {
+        ...base,
+        type: "identity",
+        payload: {
+          title: p.title,
+          kind: p.kind ?? null,
+          fullName: p.fullName ?? null,
+          hasNumber: !!p.number,
+          issuedBy: p.issuedBy ?? null,
+          issueDate: p.issueDate ?? null,
+          expiryDate: p.expiryDate ?? null,
+          notes: p.notes ?? null,
+          tags: p.tags,
+          fields: fields(p.fields),
+        },
+      };
+    }
+    return { ...base, type: "secure_note", payload: c.payload };
   }
 
-  function fieldValue(id: string, field: CopyField): string {
-    const item = getItem(id);
-    const value =
-      item.content.type === "login"
-        ? field === "content"
-          ? null
-          : item.content.payload[field]
-        : field === "content"
-          ? item.content.payload.content
-          : null;
+  /** Mirrors Rust `field_value`: the value and whether it is a secret (auto-cleared). */
+  function fieldValue(id: string, field: CopyField): { value: string; secret: boolean } {
+    const c = getItem(id).content;
+    let value: string | null | undefined = null;
+    let secret = false;
+    if (field.startsWith("custom:")) {
+      const f = ("fields" in c.payload ? c.payload.fields : undefined)?.[Number(field.slice(7))];
+      value = f?.value;
+      secret = !!f?.hidden;
+    } else if (c.type === "login" && ["username", "email", "password", "website"].includes(field)) {
+      value = c.payload[field as "username" | "email" | "password" | "website"];
+      secret = field === "password";
+    } else if (c.type === "secure_note" && field === "content") {
+      value = c.payload.content;
+      secret = true;
+    } else if (c.type === "card") {
+      const map = {
+        card_number: c.payload.number,
+        card_cvv: c.payload.cvv,
+        card_pin: c.payload.pin,
+        cardholder: c.payload.cardholder,
+      } as Record<string, string | null | undefined>;
+      value = map[field];
+      secret = field !== "cardholder";
+    } else if (c.type === "identity" && field === "doc_number") {
+      value = c.payload.number;
+      secret = true;
+    }
     if (!value) return fail("not_found");
-    return value;
+    return { value, secret };
   }
 
   function generate(o: GeneratorOptions) {
@@ -353,6 +424,8 @@ export function createMockBackend(options: MockOptions = {}) {
         total: active.length,
         logins: active.filter((i) => i.content.type === "login").length,
         notes: active.filter((i) => i.content.type === "secure_note").length,
+        cards: active.filter((i) => i.content.type === "card").length,
+        identities: active.filter((i) => i.content.type === "identity").length,
         favorites: active.filter((i) => i.favorite).length,
         trash: items.size - active.length,
         recent: byUpdated.slice(0, 6).map(summary),
@@ -376,6 +449,7 @@ export function createMockBackend(options: MockOptions = {}) {
         createdAt: t,
         updatedAt: t,
         deletedAt: null,
+        passwordChangedAt: i.type === "login" && i.payload.password ? t : null,
       });
       return id;
     },
@@ -385,6 +459,11 @@ export function createMockBackend(options: MockOptions = {}) {
       const i = input as ItemInput;
       if (i.type !== item.content.type) fail("validation", "validation failed: type");
       validate(i);
+      if (item.content.type === "login" && i.type === "login") {
+        if ((item.content.payload.password ?? null) !== (i.payload.password ?? null)) {
+          item.passwordChangedAt = i.payload.password ? now() : null;
+        }
+      }
       item.content = { type: i.type, payload: i.payload } as ItemContent;
       item.folderId = i.folderId ?? null;
       item.updatedAt = now();
@@ -430,12 +509,21 @@ export function createMockBackend(options: MockOptions = {}) {
     },
     reveal_password: ({ id }) => {
       requireUnlocked();
-      return fieldValue(id as string, "password");
+      return fieldValue(id as string, "password").value;
+    },
+    reveal_field: ({ id, field }) => {
+      requireUnlocked();
+      return fieldValue(id as string, field as CopyField).value;
+    },
+    get_item_for_edit: ({ id }) => {
+      requireUnlocked();
+      return structuredClone(getItem(id as string).content);
     },
     copy_item_field: ({ id, field }) => {
       requireUnlocked();
-      clipboard.value = fieldValue(id as string, field as CopyField);
-      return field === "password" || field === "content" ? settings.clipboardClearSeconds : 0;
+      const { value, secret } = fieldValue(id as string, field as CopyField);
+      clipboard.value = value;
+      return secret ? settings.clipboardClearSeconds : 0;
     },
     open_item_website: ({ id }) => {
       requireUnlocked();

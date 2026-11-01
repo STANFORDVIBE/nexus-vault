@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::{AppError, AppResult};
-use crate::core::model::{ItemPayload, ItemType};
+use crate::core::model::{CustomField, ItemPayload, ItemType};
 use crate::core::time::now_millis;
 use crate::core::vault::{UnlockedVault, VaultItem, encode_payload, item_aad};
 use crate::crypto::{CRYPTO_VERSION, aead, random};
@@ -34,6 +34,33 @@ pub struct ItemSummary {
     pub deleted_at: Option<i64>,
 }
 
+/// A custom field as the UI sees it: hidden values are left out (copy/reveal instead).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldView {
+    pub label: String,
+    pub value: Option<String>,
+    pub hidden: bool,
+}
+
+fn field_views(fields: &[CustomField]) -> Vec<FieldView> {
+    fields
+        .iter()
+        .map(|f| FieldView {
+            label: f.label.clone(),
+            value: (!f.hidden).then(|| f.value.clone()),
+            hidden: f.hidden,
+        })
+        .collect()
+}
+
+/// Last four digits for display: `•••• 1234`.
+fn masked_tail(number: &str) -> String {
+    let digits: Vec<char> = number.chars().collect();
+    let tail: String = digits[digits.len().saturating_sub(4)..].iter().collect();
+    format!("•••• {tail}")
+}
+
 /// Detail view. The login password is never included: the UI asks for it explicitly
 /// (`reveal_password`) or lets Rust copy it straight to the clipboard.
 #[derive(Serialize)]
@@ -48,12 +75,41 @@ pub enum ItemContentView {
         notes: Option<String>,
         tags: Vec<String>,
         has_password: bool,
+        fields: Vec<FieldView>,
+        password_changed_at: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     SecureNote {
         title: String,
         content: String,
         tags: Vec<String>,
+    },
+    /// Number, CVV and PIN stay in Rust; only the last four digits are shown.
+    #[serde(rename_all = "camelCase")]
+    Card {
+        title: String,
+        cardholder: Option<String>,
+        number_masked: Option<String>,
+        expiry: Option<String>,
+        has_cvv: bool,
+        has_pin: bool,
+        notes: Option<String>,
+        tags: Vec<String>,
+        fields: Vec<FieldView>,
+    },
+    /// The document number is revealed or copied on request only.
+    #[serde(rename_all = "camelCase")]
+    Identity {
+        title: String,
+        kind: Option<String>,
+        full_name: Option<String>,
+        has_number: bool,
+        issued_by: Option<String>,
+        issue_date: Option<String>,
+        expiry_date: Option<String>,
+        notes: Option<String>,
+        tags: Vec<String>,
+        fields: Vec<FieldView>,
     },
 }
 
@@ -76,6 +132,8 @@ pub enum ItemView {
     All,
     Logins,
     Notes,
+    Cards,
+    Identities,
     Favorites,
     Trash,
     Folder,
@@ -102,21 +160,52 @@ pub struct ItemFilter {
     pub sort: ItemSort,
 }
 
-/// Fields that can be copied to the clipboard by the backend.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+/// Fields that can be revealed or copied by the backend. On the wire it is a string:
+/// `"password"`, `"card_number"`, ... or `"custom:<index>"` for a custom field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopyField {
     Username,
     Email,
     Password,
     Website,
     Content,
+    CardNumber,
+    CardCvv,
+    CardPin,
+    Cardholder,
+    DocNumber,
+    Custom(usize),
 }
 
 impl CopyField {
-    pub fn is_secret(self) -> bool {
-        matches!(self, CopyField::Password | CopyField::Content)
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "username" => CopyField::Username,
+            "email" => CopyField::Email,
+            "password" => CopyField::Password,
+            "website" => CopyField::Website,
+            "content" => CopyField::Content,
+            "card_number" => CopyField::CardNumber,
+            "card_cvv" => CopyField::CardCvv,
+            "card_pin" => CopyField::CardPin,
+            "cardholder" => CopyField::Cardholder,
+            "doc_number" => CopyField::DocNumber,
+            other => CopyField::Custom(other.strip_prefix("custom:")?.parse().ok()?),
+        })
     }
+}
+
+impl<'de> Deserialize<'de> for CopyField {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        CopyField::parse(&value).ok_or_else(|| serde::de::Error::custom("unknown field"))
+    }
+}
+
+/// A field value plus whether it is a secret (clipboard auto-clear, no history).
+pub struct FieldValue {
+    pub value: String,
+    pub secret: bool,
 }
 
 #[derive(Serialize)]
@@ -125,6 +214,8 @@ pub struct DashboardData {
     pub total: usize,
     pub logins: usize,
     pub notes: usize,
+    pub cards: usize,
+    pub identities: usize,
     pub favorites: usize,
     pub trash: usize,
     pub recent: Vec<ItemSummary>,
@@ -165,6 +256,22 @@ fn summary(item: &VaultItem) -> ItemSummary {
             p.website.clone(),
         ),
         ItemPayload::SecureNote(p) => (first_line_preview(&p.content), None),
+        ItemPayload::Card(p) => {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(n) = &p.number {
+                parts.push(masked_tail(n));
+            }
+            if let Some(e) = &p.expiry {
+                parts.push(e.clone());
+            }
+            let sub = if parts.is_empty() {
+                p.cardholder.clone()
+            } else {
+                Some(parts.join(" · "))
+            };
+            (sub, None)
+        }
+        ItemPayload::Identity(p) => (p.full_name.clone(), None),
     };
     ItemSummary {
         id: item.id.clone(),
@@ -191,11 +298,36 @@ fn detail(item: &VaultItem) -> ItemDetail {
             notes: p.notes.clone(),
             tags: p.tags.clone(),
             has_password: p.password.is_some(),
+            fields: field_views(&p.fields),
+            password_changed_at: p.password_changed_at,
         },
         ItemPayload::SecureNote(p) => ItemContentView::SecureNote {
             title: p.title.clone(),
             content: p.content.clone(),
             tags: p.tags.clone(),
+        },
+        ItemPayload::Card(p) => ItemContentView::Card {
+            title: p.title.clone(),
+            cardholder: p.cardholder.clone(),
+            number_masked: p.number.as_deref().map(masked_tail),
+            expiry: p.expiry.clone(),
+            has_cvv: p.cvv.is_some(),
+            has_pin: p.pin.is_some(),
+            notes: p.notes.clone(),
+            tags: p.tags.clone(),
+            fields: field_views(&p.fields),
+        },
+        ItemPayload::Identity(p) => ItemContentView::Identity {
+            title: p.title.clone(),
+            kind: p.kind.clone(),
+            full_name: p.full_name.clone(),
+            has_number: p.number.is_some(),
+            issued_by: p.issued_by.clone(),
+            issue_date: p.issue_date.clone(),
+            expiry_date: p.expiry_date.clone(),
+            notes: p.notes.clone(),
+            tags: p.tags.clone(),
+            fields: field_views(&p.fields),
         },
     };
     ItemDetail {
@@ -226,6 +358,30 @@ fn haystack(item: &VaultItem) -> (String, String) {
         ItemPayload::SecureNote(p) => {
             rest.push(' ');
             rest.push_str(&p.content);
+        }
+        ItemPayload::Card(p) => {
+            for field in [&p.cardholder, &p.notes].into_iter().flatten() {
+                rest.push(' ');
+                rest.push_str(field);
+            }
+        }
+        ItemPayload::Identity(p) => {
+            for field in [&p.kind, &p.full_name, &p.issued_by, &p.notes]
+                .into_iter()
+                .flatten()
+            {
+                rest.push(' ');
+                rest.push_str(field);
+            }
+        }
+    }
+    // custom field labels are searchable; values only when not hidden
+    for field in item.payload.fields() {
+        rest.push(' ');
+        rest.push_str(&field.label);
+        if !field.hidden {
+            rest.push(' ');
+            rest.push_str(&field.value);
         }
     }
     (title, rest.to_lowercase())
@@ -288,6 +444,8 @@ impl UnlockedVault {
                 ItemView::All => true,
                 ItemView::Logins => item.item_type == ItemType::Login,
                 ItemView::Notes => item.item_type == ItemType::SecureNote,
+                ItemView::Cards => item.item_type == ItemType::Card,
+                ItemView::Identities => item.item_type == ItemType::Identity,
                 ItemView::Favorites => item.favorite,
                 ItemView::Folder => item.folder_id.as_deref() == filter.folder_id.as_deref(),
             })
@@ -333,16 +491,13 @@ impl UnlockedVault {
             active.iter().copied().filter(|i| i.favorite).collect();
         favorites.sort_by_key(|i| std::cmp::Reverse(i.updated_at));
 
+        let count = |t: ItemType| active.iter().filter(|i| i.item_type == t).count();
         DashboardData {
             total: active.len(),
-            logins: active
-                .iter()
-                .filter(|i| i.item_type == ItemType::Login)
-                .count(),
-            notes: active
-                .iter()
-                .filter(|i| i.item_type == ItemType::SecureNote)
-                .count(),
+            logins: count(ItemType::Login),
+            notes: count(ItemType::SecureNote),
+            cards: count(ItemType::Card),
+            identities: count(ItemType::Identity),
             favorites: favorites.len(),
             trash: self.items.len() - active.len(),
             recent: recent.into_iter().take(6).map(summary).collect(),
@@ -351,17 +506,38 @@ impl UnlockedVault {
     }
 
     /// Plaintext of a single field, for reveal/copy. Secret values stay in Rust otherwise.
-    pub fn field_value(&self, id: &str, field: CopyField) -> AppResult<String> {
+    pub fn field(&self, id: &str, field: CopyField) -> AppResult<FieldValue> {
         let item = self.item(id)?;
-        let value = match (&item.payload, field) {
-            (ItemPayload::Login(p), CopyField::Username) => p.username.clone(),
-            (ItemPayload::Login(p), CopyField::Email) => p.email.clone(),
-            (ItemPayload::Login(p), CopyField::Password) => p.password.clone(),
-            (ItemPayload::Login(p), CopyField::Website) => p.website.clone(),
-            (ItemPayload::SecureNote(p), CopyField::Content) => Some(p.content.clone()),
+        let public = |v: &Option<String>| v.clone().map(|value| (value, false));
+        let secret = |v: &Option<String>| v.clone().map(|value| (value, true));
+        let found = match (&item.payload, field) {
+            (ItemPayload::Login(p), CopyField::Username) => public(&p.username),
+            (ItemPayload::Login(p), CopyField::Email) => public(&p.email),
+            (ItemPayload::Login(p), CopyField::Password) => secret(&p.password),
+            (ItemPayload::Login(p), CopyField::Website) => public(&p.website),
+            (ItemPayload::SecureNote(p), CopyField::Content) => Some((p.content.clone(), true)),
+            (ItemPayload::Card(p), CopyField::CardNumber) => secret(&p.number),
+            (ItemPayload::Card(p), CopyField::CardCvv) => secret(&p.cvv),
+            (ItemPayload::Card(p), CopyField::CardPin) => secret(&p.pin),
+            (ItemPayload::Card(p), CopyField::Cardholder) => public(&p.cardholder),
+            (ItemPayload::Identity(p), CopyField::DocNumber) => secret(&p.number),
+            (payload, CopyField::Custom(index)) => payload
+                .fields()
+                .get(index)
+                .map(|f| (f.value.clone(), f.hidden)),
             _ => None,
         };
-        value.ok_or(AppError::NotFound)
+        let (value, secret) = found.ok_or(AppError::NotFound)?;
+        Ok(FieldValue { value, secret })
+    }
+
+    pub fn field_value(&self, id: &str, field: CopyField) -> AppResult<String> {
+        self.field(id, field).map(|f| f.value)
+    }
+
+    /// The complete decrypted payload, for the edit form only.
+    pub fn payload_for_edit(&self, id: &str) -> AppResult<ItemPayload> {
+        Ok(self.item(id)?.payload.clone())
     }
 
     pub fn create_item(
@@ -373,10 +549,13 @@ impl UnlockedVault {
     ) -> AppResult<String> {
         payload.validate_and_normalize()?;
         self.ensure_folder(folder_id.as_deref())?;
+        let now = now_millis();
+        if let ItemPayload::Login(p) = &mut payload {
+            p.password_changed_at = p.password.is_some().then_some(now);
+        }
 
         let id = random::new_id()?;
         let sealed = self.seal_payload(&id, &payload)?;
-        let now = now_millis();
         let row = ItemRow {
             id: id.clone(),
             item_type: payload.item_type().as_str().into(),
@@ -420,9 +599,19 @@ impl UnlockedVault {
         }
         payload.validate_and_normalize()?;
         self.ensure_folder(folder_id.as_deref())?;
+        let now = now_millis();
+        // the password age is tracked here, never taken from the client
+        if let (ItemPayload::Login(new), ItemPayload::Login(old)) =
+            (&mut payload, &self.item(id)?.payload)
+        {
+            new.password_changed_at = if new.password == old.password {
+                old.password_changed_at
+            } else {
+                new.password.is_some().then_some(now)
+            };
+        }
 
         let sealed = self.seal_payload(id, &payload)?;
-        let now = now_millis();
         db.transaction(|tx| {
             repo::update_item_payload(
                 tx,
@@ -796,9 +985,103 @@ mod tests {
         fn content_title(&self) -> &str {
             match &self.content {
                 ItemContentView::Login { title, .. }
-                | ItemContentView::SecureNote { title, .. } => title,
+                | ItemContentView::SecureNote { title, .. }
+                | ItemContentView::Card { title, .. }
+                | ItemContentView::Identity { title, .. } => title,
             }
         }
+    }
+
+    #[test]
+    fn cards_keep_secrets_out_of_views() {
+        use crate::core::model::{CardPayload, CustomField};
+        let (mut db, mut vault) = setup();
+        let id = vault
+            .create_item(
+                &mut db,
+                ItemPayload::Card(CardPayload {
+                    title: "Тинькофф".into(),
+                    cardholder: Some("IVAN IVANOV".into()),
+                    number: Some("5536 9137 1234 5678".into()),
+                    expiry: Some("04/28".into()),
+                    cvv: Some("321".into()),
+                    fields: vec![CustomField {
+                        label: "Кодовое слово".into(),
+                        value: "тюлень".into(),
+                        hidden: true,
+                    }],
+                    ..Default::default()
+                }),
+                None,
+                false,
+            )
+            .unwrap();
+
+        let json = serde_json::to_string(&vault.get_item(&id).unwrap()).unwrap();
+        assert!(json.contains("•••• 5678"));
+        for secret in ["5536913712345678", "321", "тюлень"] {
+            assert!(
+                !json.contains(secret),
+                "{secret} leaked into the detail view"
+            );
+        }
+        let listed = serde_json::to_string(&vault.list_items(&ItemFilter {
+            view: ItemView::Cards,
+            ..all()
+        }))
+        .unwrap();
+        assert!(listed.contains("•••• 5678 · 04/28") && !listed.contains("5536"));
+
+        let number = vault.field(&id, CopyField::CardNumber).unwrap();
+        assert_eq!(number.value, "5536913712345678");
+        assert!(number.secret);
+        let custom = vault.field(&id, CopyField::Custom(0)).unwrap();
+        assert!(custom.secret && custom.value == "тюлень");
+        assert!(vault.field(&id, CopyField::Password).is_err());
+        assert_eq!(vault.dashboard().cards, 1);
+    }
+
+    #[test]
+    fn password_age_is_tracked_by_the_backend() {
+        let (mut db, mut vault) = setup();
+        let id = vault
+            .create_item(&mut db, login("A", "u", "first"), None, false)
+            .unwrap();
+        let created = vault.payload_for_edit(&id).unwrap();
+        let ItemPayload::Login(p) = &created else {
+            unreachable!()
+        };
+        let first_change = p.password_changed_at.unwrap();
+
+        // editing other fields keeps the date, even if the client sends a fake one
+        let mut edited = created.clone();
+        if let ItemPayload::Login(p) = &mut edited {
+            p.notes = Some("note".into());
+            p.password_changed_at = Some(1);
+        }
+        vault.update_item(&mut db, &id, edited, None).unwrap();
+        let ItemPayload::Login(p) = &vault.payload_for_edit(&id).unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(p.password_changed_at, Some(first_change));
+
+        let mut changed = vault.payload_for_edit(&id).unwrap();
+        if let ItemPayload::Login(p) = &mut changed {
+            p.password = Some("second".into());
+        }
+        vault.update_item(&mut db, &id, changed, None).unwrap();
+        let ItemPayload::Login(p) = &vault.payload_for_edit(&id).unwrap() else {
+            unreachable!()
+        };
+        assert!(p.password_changed_at.unwrap() >= first_change);
+    }
+
+    #[test]
+    fn copy_field_names_parse() {
+        assert_eq!(CopyField::parse("card_pin"), Some(CopyField::CardPin));
+        assert_eq!(CopyField::parse("custom:12"), Some(CopyField::Custom(12)));
+        assert_eq!(CopyField::parse("custom:x"), None);
+        assert_eq!(CopyField::parse("evil"), None);
     }
 
     /// Unlock, list and search timings for a 10 000-item vault (spec target: search < 100 ms).

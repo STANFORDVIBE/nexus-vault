@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { customFieldsSchema } from "@/features/items/itemSchemas";
 
 export const loginSchema = z.object({
   title: z.string().trim().min(1, "Укажите название").max(200, "Не длиннее 200 символов"),
@@ -12,6 +13,7 @@ export const loginSchema = z.object({
   password: z.string().max(4096, "Слишком длинный пароль"),
   notes: z.string().max(100_000, "Слишком длинные заметки"),
   tags: z.array(z.string()).max(32),
+  fields: customFieldsSchema,
   folderId: z.string().nullable(),
   favorite: z.boolean(),
 });
@@ -26,6 +28,7 @@ export const EMPTY_LOGIN: LoginFormValues = {
   password: "",
   notes: "",
   tags: [],
+  fields: [],
   folderId: null,
   favorite: false,
 };

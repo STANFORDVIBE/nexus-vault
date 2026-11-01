@@ -1,4 +1,4 @@
-import { KeyRoundIcon, StickyNoteIcon } from "lucide-react";
+import { CreditCardIcon, IdCardIcon, KeyRoundIcon, StickyNoteIcon } from "lucide-react";
 import { cn } from "cn";
 import type { ItemType } from "@/types/vault";
 
@@ -28,7 +28,9 @@ interface ItemAvatarProps {
 
 export function ItemAvatar({ type, title, size = "sm", className }: ItemAvatarProps) {
   const box = size === "lg" ? "size-12 rounded-lg text-lg" : "size-9 rounded-md text-sm";
-  if (type === "secure_note") {
+  if (type !== "login") {
+    const Icon =
+      type === "card" ? CreditCardIcon : type === "identity" ? IdCardIcon : StickyNoteIcon;
     return (
       <div
         aria-hidden="true"
@@ -38,7 +40,7 @@ export function ItemAvatar({ type, title, size = "sm", className }: ItemAvatarPr
           className,
         )}
       >
-        <StickyNoteIcon className={size === "lg" ? "size-5" : "size-4"} strokeWidth={1.75} />
+        <Icon className={size === "lg" ? "size-5" : "size-4"} strokeWidth={1.75} />
       </div>
     );
   }

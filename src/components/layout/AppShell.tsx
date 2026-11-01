@@ -4,7 +4,16 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { useActivityReporter, useQuickSearchEvent } from "@/hooks/useActivityReporter";
 import { useAppHotkeys } from "@/hooks/useAppHotkeys";
 
-const LIST_PREFIXES = ["/items", "/passwords", "/notes", "/favorites", "/trash", "/folders/"];
+const LIST_PREFIXES = [
+  "/items",
+  "/passwords",
+  "/notes",
+  "/cards",
+  "/documents",
+  "/favorites",
+  "/trash",
+  "/folders/",
+];
 
 export function AppShell() {
   const navigate = useNavigate();

@@ -53,6 +53,55 @@ fn csv_cell(value: &str) -> String {
     }
 }
 
+/// `Label: value` per line (Bitwarden's format for its `fields` column).
+fn lines(pairs: &[(&str, &str)]) -> String {
+    pairs
+        .iter()
+        .map(|(label, value)| format!("{label}: {value}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Notes text for types that CSV has no columns for: every field as a line.
+fn note_text(payload: &ItemPayload) -> String {
+    let opt = |v: &Option<String>| v.clone().unwrap_or_default();
+    let (pairs, notes): (Vec<(&str, String)>, Option<&String>) = match payload {
+        ItemPayload::Login(_) => (Vec::new(), None),
+        ItemPayload::SecureNote(p) => return p.content.clone(),
+        ItemPayload::Card(p) => (
+            vec![
+                ("Держатель", opt(&p.cardholder)),
+                ("Номер", opt(&p.number)),
+                ("Срок действия", opt(&p.expiry)),
+                ("CVV", opt(&p.cvv)),
+                ("PIN", opt(&p.pin)),
+            ],
+            p.notes.as_ref(),
+        ),
+        ItemPayload::Identity(p) => (
+            vec![
+                ("Тип документа", opt(&p.kind)),
+                ("ФИО", opt(&p.full_name)),
+                ("Номер", opt(&p.number)),
+                ("Кем выдан", opt(&p.issued_by)),
+                ("Дата выдачи", opt(&p.issue_date)),
+                ("Действует до", opt(&p.expiry_date)),
+            ],
+            p.notes.as_ref(),
+        ),
+    };
+    let mut text: Vec<String> = pairs
+        .into_iter()
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(k, v)| format!("{k}: {v}"))
+        .collect();
+    if let Some(notes) = notes {
+        text.push(String::new());
+        text.push(notes.clone());
+    }
+    text.join("\n")
+}
+
 /// Bitwarden CSV: folder,favorite,type,name,notes,fields,reprompt,login_uri,
 /// login_username,login_password,login_totp. Types it cannot hold go in as notes.
 pub fn to_csv(vault: &UnlockedVault) -> Zeroizing<String> {
@@ -64,13 +113,22 @@ pub fn to_csv(vault: &UnlockedVault) -> Zeroizing<String> {
             folder_name(vault, item).into(),
             if item.favorite { "1" } else { "" }.into(),
         ];
+        let mut fields: Vec<(&str, &str)> = Vec::new();
+        if let ItemPayload::Login(p) = &item.payload
+            && let Some(email) = &p.email
+        {
+            fields.push(("Email", email));
+        }
+        fields.extend(
+            item.payload
+                .fields()
+                .iter()
+                .map(|f| (f.label.as_str(), f.value.as_str())),
+        );
+        let fields = lines(&fields);
+
         match &item.payload {
             ItemPayload::Login(p) => {
-                let fields = p
-                    .email
-                    .as_deref()
-                    .map(|e| format!("Email: {e}"))
-                    .unwrap_or_default();
                 row.extend([
                     "login".into(),
                     p.title.clone(),
@@ -83,18 +141,14 @@ pub fn to_csv(vault: &UnlockedVault) -> Zeroizing<String> {
                     String::new(),
                 ]);
             }
-            ItemPayload::SecureNote(p) => {
+            other => {
                 row.extend([
                     "note".into(),
-                    p.title.clone(),
-                    p.content.clone(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
+                    other.title().to_string(),
+                    note_text(other),
+                    fields,
                 ]);
+                row.extend(std::iter::repeat_n(String::new(), 5));
             }
         }
         let line: Vec<String> = row.iter().map(|c| csv_cell(c)).collect();

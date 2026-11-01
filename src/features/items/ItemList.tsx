@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import {
   ArrowDownUpIcon,
+  CreditCardIcon,
+  IdCardIcon,
   KeyRoundIcon,
   PlusIcon,
   SearchIcon,
@@ -141,6 +143,14 @@ export function ItemList({
                     <DropdownMenuItem onSelect={() => onCreate("secure_note")}>
                       <StickyNoteIcon />
                       Заметка
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onCreate("card")}>
+                      <CreditCardIcon />
+                      Банковская карта
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onCreate("identity")}>
+                      <IdCardIcon />
+                      Документ
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

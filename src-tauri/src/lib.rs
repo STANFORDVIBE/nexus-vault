@@ -103,6 +103,8 @@ pub fn run() {
             commands::items::empty_trash,
             commands::items::reveal_password,
             commands::items::copy_item_field,
+            commands::items::reveal_field,
+            commands::items::get_item_for_edit,
             commands::items::open_item_website,
             commands::items::open_external_url,
             commands::folders::list_folders,

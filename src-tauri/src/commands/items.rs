@@ -157,11 +157,30 @@ pub async fn copy_item_field(
         let clear_after = inner.settings.clipboard_clear_seconds;
         inner.touch();
         let (_, vault) = inner.unlocked()?;
-        (vault.field_value(&id, field)?, clear_after)
+        (vault.field(&id, field)?, clear_after)
     };
-    let clear_after = if field.is_secret() { clear_after } else { 0 };
-    clipboard::copy(&app, value, field.is_secret(), clear_after)?;
+    let clear_after = if value.secret { clear_after } else { 0 };
+    clipboard::copy(&app, value.value, value.secret, clear_after)?;
     Ok(clear_after)
+}
+
+/// Reveals one field ("show" button). Same set of fields as copying.
+#[tauri::command]
+pub async fn reveal_field(
+    state: State<'_, SharedState>,
+    id: String,
+    field: CopyField,
+) -> AppResult<String> {
+    with_unlocked(&state, |_, vault| vault.field_value(&id, field))
+}
+
+/// The full item, secrets included, to fill the edit form.
+#[tauri::command]
+pub async fn get_item_for_edit(
+    state: State<'_, SharedState>,
+    id: String,
+) -> AppResult<ItemPayload> {
+    with_unlocked(&state, |_, vault| vault.payload_for_edit(&id))
 }
 
 #[cfg(test)]

@@ -26,7 +26,21 @@ export interface VaultListEntry {
   active: boolean;
 }
 
-export type ItemType = "login" | "secure_note";
+export type ItemType = "login" | "secure_note" | "card" | "identity";
+
+/** Extra user-defined field. `hidden` ones are masked and copied by Rust only. */
+export interface CustomField {
+  label: string;
+  value: string;
+  hidden: boolean;
+}
+
+/** Custom field in a detail view: hidden values are not sent (`value` is null). */
+export interface FieldView {
+  label: string;
+  value: string | null;
+  hidden: boolean;
+}
 
 export interface LoginPayload {
   title: string;
@@ -36,6 +50,33 @@ export interface LoginPayload {
   password?: string | null;
   notes?: string | null;
   tags: string[];
+  fields?: CustomField[];
+}
+
+export interface CardPayload {
+  title: string;
+  cardholder?: string | null;
+  number?: string | null;
+  /** MM/YY */
+  expiry?: string | null;
+  cvv?: string | null;
+  pin?: string | null;
+  notes?: string | null;
+  tags: string[];
+  fields?: CustomField[];
+}
+
+export interface IdentityPayload {
+  title: string;
+  kind?: string | null;
+  fullName?: string | null;
+  number?: string | null;
+  issuedBy?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  notes?: string | null;
+  tags: string[];
+  fields?: CustomField[];
 }
 
 export interface SecureNotePayload {
@@ -45,7 +86,10 @@ export interface SecureNotePayload {
 }
 
 export type ItemContent =
-  { type: "login"; payload: LoginPayload } | { type: "secure_note"; payload: SecureNotePayload };
+  | { type: "login"; payload: LoginPayload }
+  | { type: "secure_note"; payload: SecureNotePayload }
+  | { type: "card"; payload: CardPayload }
+  | { type: "identity"; payload: IdentityPayload };
 
 export type ItemInput = ItemContent & { folderId?: string | null; favorite?: boolean };
 
@@ -72,6 +116,34 @@ export interface LoginView {
   notes: string | null;
   tags: string[];
   hasPassword: boolean;
+  fields: FieldView[];
+  passwordChangedAt: number | null;
+}
+
+/** Card detail: number, CVV and PIN stay in Rust (only `•••• 1234` is shown). */
+export interface CardView {
+  title: string;
+  cardholder: string | null;
+  numberMasked: string | null;
+  expiry: string | null;
+  hasCvv: boolean;
+  hasPin: boolean;
+  notes: string | null;
+  tags: string[];
+  fields: FieldView[];
+}
+
+export interface IdentityView {
+  title: string;
+  kind: string | null;
+  fullName: string | null;
+  hasNumber: boolean;
+  issuedBy: string | null;
+  issueDate: string | null;
+  expiryDate: string | null;
+  notes: string | null;
+  tags: string[];
+  fields: FieldView[];
 }
 
 interface ItemDetailBase {
@@ -84,9 +156,15 @@ interface ItemDetailBase {
 }
 
 export type ItemDetail = ItemDetailBase &
-  ({ type: "login"; payload: LoginView } | { type: "secure_note"; payload: SecureNotePayload });
+  (
+    | { type: "login"; payload: LoginView }
+    | { type: "secure_note"; payload: SecureNotePayload }
+    | { type: "card"; payload: CardView }
+    | { type: "identity"; payload: IdentityView }
+  );
 
-export type ItemView = "all" | "logins" | "notes" | "favorites" | "trash" | "folder";
+export type ItemView =
+  "all" | "logins" | "notes" | "cards" | "identities" | "favorites" | "trash" | "folder";
 export type ItemSort = "updated" | "created" | "title";
 
 export interface ItemFilter {
@@ -96,7 +174,18 @@ export interface ItemFilter {
   sort?: ItemSort;
 }
 
-export type CopyField = "username" | "email" | "password" | "website" | "content";
+export type CopyField =
+  | "username"
+  | "email"
+  | "password"
+  | "website"
+  | "content"
+  | "card_number"
+  | "card_cvv"
+  | "card_pin"
+  | "cardholder"
+  | "doc_number"
+  | `custom:${number}`;
 
 export interface FolderView {
   id: string;
@@ -109,6 +198,8 @@ export interface DashboardData {
   total: number;
   logins: number;
   notes: number;
+  cards: number;
+  identities: number;
   favorites: number;
   trash: number;
   recent: ItemSummary[];

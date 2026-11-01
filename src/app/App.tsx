@@ -27,6 +27,8 @@ export function App() {
               <Route path="items" element={<ItemsPage key="all" view="all" />} />
               <Route path="passwords" element={<ItemsPage key="logins" view="logins" />} />
               <Route path="notes" element={<ItemsPage key="notes" view="notes" />} />
+              <Route path="cards" element={<ItemsPage key="cards" view="cards" />} />
+              <Route path="documents" element={<ItemsPage key="identities" view="identities" />} />
               <Route path="favorites" element={<ItemsPage key="favorites" view="favorites" />} />
               <Route path="trash" element={<ItemsPage key="trash" view="trash" />} />
               <Route path="folders" element={<FoldersPage />} />

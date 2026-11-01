@@ -8,6 +8,7 @@ import type {
   GeneratedPassword,
   GeneratorOptions,
   ItemDetail,
+  ItemContent,
   ItemFilter,
   ItemInput,
   ItemSummary,
@@ -59,6 +60,10 @@ export const deleteItemPermanently = (id: string) =>
   invoke<void>("delete_item_permanently", { id });
 export const emptyTrash = () => invoke<number>("empty_trash");
 export const revealPassword = (id: string) => invoke<string>("reveal_password", { id });
+export const revealField = (id: string, field: CopyField) =>
+  invoke<string>("reveal_field", { id, field });
+/** Full content with secrets, only to fill an edit form. */
+export const getItemForEdit = (id: string) => invoke<ItemContent>("get_item_for_edit", { id });
 /** Copies in Rust; resolves to the auto-clear timeout in seconds (0 = not cleared). */
 export const copyItemField = (id: string, field: CopyField) =>
   invoke<number>("copy_item_field", { id, field });

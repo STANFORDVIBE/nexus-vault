@@ -1,4 +1,6 @@
 import {
+  CreditCardIcon,
+  IdCardIcon,
   KeyRoundIcon,
   LayersIcon,
   StarIcon,
@@ -45,6 +47,26 @@ export const VIEWS: Record<Exclude<ItemView, "folder">, ViewConfig> = {
       icon: StickyNoteIcon,
       title: "Нет заметок",
       description: "Храните коды восстановления, ключи и другие секреты",
+    },
+  },
+  cards: {
+    view: "cards",
+    title: "Карты",
+    createType: "card",
+    empty: {
+      icon: CreditCardIcon,
+      title: "Нет банковских карт",
+      description: "Номер, срок, CVV и PIN под надёжным шифрованием",
+    },
+  },
+  identities: {
+    view: "identities",
+    title: "Документы",
+    createType: "identity",
+    empty: {
+      icon: IdCardIcon,
+      title: "Нет документов",
+      description: "Паспорт, права, СНИЛС, полисы — всегда под рукой",
     },
   },
   favorites: {

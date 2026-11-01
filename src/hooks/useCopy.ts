@@ -4,25 +4,34 @@ import { errorMessage } from "@/services/errors";
 import { copyGenerated, copyItemField } from "@/services/vault";
 import type { CopyField } from "@/types/vault";
 
-const FIELD_LABELS: Record<CopyField, string> = {
+type NamedField = Exclude<CopyField, `custom:${number}`>;
+
+const FIELD_LABELS: Record<NamedField, string> = {
   username: "Логин",
   email: "Email",
   password: "Пароль",
   website: "Адрес сайта",
   content: "Заметка",
+  card_number: "Номер карты",
+  card_cvv: "CVV",
+  card_pin: "PIN",
+  cardholder: "Держатель",
+  doc_number: "Номер документа",
 };
 
 function notify(label: string, clearAfter: number) {
-  toast.success(`${label} скопирован${label === "Заметка" ? "а" : ""}`, {
+  toast.success(`Скопировано: ${label}`, {
     description: clearAfter > 0 ? `Буфер обмена очистится через ${clearAfter} с` : undefined,
   });
 }
 
 /** Copying happens in Rust: secrets never pass through the WebView clipboard API. */
 export function useCopy() {
-  const copyField = useCallback(async (id: string, field: CopyField) => {
+  const copyField = useCallback(async (id: string, field: CopyField, label?: string) => {
     try {
-      notify(FIELD_LABELS[field], await copyItemField(id, field));
+      const name =
+        label ?? (field.startsWith("custom:") ? "поле" : FIELD_LABELS[field as NamedField]);
+      notify(name, await copyItemField(id, field));
     } catch (error) {
       toast.error(errorMessage(error));
     }

@@ -11,8 +11,10 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { GeneratorPanel } from "@/features/generator/GeneratorPanel";
+import { CustomFieldsEditor } from "@/features/items/CustomFieldsEditor";
 import { FolderSelect } from "@/features/items/FolderSelect";
 import { FormShell } from "@/features/items/FormShell";
+import { cleanFields } from "@/features/items/itemSchemas";
 import { loginSchema, type LoginFormValues } from "@/features/items/loginSchema";
 import { TagInput } from "@/features/items/TagInput";
 import { errorMessage } from "@/services/errors";
@@ -33,6 +35,7 @@ function toInput(values: LoginFormValues): ItemInput {
       password: values.password ? values.password : null,
       notes: opt(values.notes),
       tags: values.tags,
+      fields: cleanFields(values.fields),
     },
     folderId: values.folderId,
     favorite: values.favorite,
@@ -194,6 +197,14 @@ export function LoginForm({ itemId, initial, initialFavorite, onSaved, onCancel 
           />
         </Field>
       </div>
+
+      <Controller
+        control={control}
+        name="fields"
+        render={({ field }) => (
+          <CustomFieldsEditor idPrefix="login" value={field.value} onChange={field.onChange} />
+        )}
+      />
 
       <Field label="Заметки" htmlFor="login-notes" error={errors.notes?.message}>
         <Textarea id="login-notes" rows={4} {...register("notes")} />

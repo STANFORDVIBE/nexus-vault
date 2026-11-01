@@ -1,5 +1,7 @@
 import {
+  CreditCardIcon,
   FolderIcon,
+  IdCardIcon,
   KeyRoundIcon,
   LayersIcon,
   LayoutDashboardIcon,
@@ -35,6 +37,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/passwords", label: "Пароли", icon: KeyRoundIcon },
       { to: "/notes", label: "Заметки", icon: StickyNoteIcon },
+      { to: "/cards", label: "Карты", icon: CreditCardIcon },
+      { to: "/documents", label: "Документы", icon: IdCardIcon },
     ],
   },
   {

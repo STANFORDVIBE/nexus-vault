@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ItemDetailPane } from "@/features/items/ItemDetailPane";
 import { ItemList } from "@/features/items/ItemList";
+import { CardForm } from "@/features/items/CardForm";
+import { IdentityForm } from "@/features/items/IdentityForm";
+import { EMPTY_CARD, EMPTY_IDENTITY } from "@/features/items/itemSchemas";
 import { LoginForm } from "@/features/items/LoginForm";
 import { EMPTY_LOGIN } from "@/features/items/loginSchema";
 import { NoteEditor } from "@/features/items/NoteEditor";
@@ -19,6 +22,14 @@ import { errorMessage } from "@/services/errors";
 import { emptyTrash, listFolders, listItems } from "@/services/vault";
 import { invalidate } from "@/store/session";
 import type { ItemFilter, ItemSort, ItemType } from "@/types/vault";
+
+type NewKind = "login" | "note" | "card" | "identity";
+const NEW_KIND: Record<ItemType, NewKind> = {
+  login: "login",
+  secure_note: "note",
+  card: "card",
+  identity: "identity",
+};
 
 const SORT_KEY = "nexus-vault:sort";
 
@@ -61,7 +72,7 @@ export function ItemsPage({ view }: ItemsPageProps) {
   const editing = params.get("edit") === "1";
 
   const setSelection = useCallback(
-    (next: { item?: string | null; new?: "login" | "note"; edit?: boolean }) => {
+    (next: { item?: string | null; new?: NewKind; edit?: boolean }) => {
       const p = new URLSearchParams();
       if (next.item) p.set("item", next.item);
       if (next.new) p.set("new", next.new);
@@ -74,7 +85,7 @@ export function ItemsPage({ view }: ItemsPageProps) {
   const onEditDone = useCallback((id: string | null) => setSelection({ item: id }), [setSelection]);
 
   function create(type: ItemType) {
-    setSelection({ new: type === "login" ? "login" : "note" });
+    setSelection({ new: NEW_KIND[type] });
   }
 
   function changeSort(next: ItemSort) {
@@ -115,6 +126,18 @@ export function ItemsPage({ view }: ItemsPageProps) {
         onCancel={() => setSelection({})}
       />
     );
+  } else if (creating === "card" || creating === "identity") {
+    const base = { folderId: folder?.id ?? null, favorite: view === "favorites" };
+    const props = {
+      onSaved: (id: string) => setSelection({ item: id }),
+      onCancel: () => setSelection({}),
+    };
+    detail =
+      creating === "card" ? (
+        <CardForm key="new-card" initial={{ ...EMPTY_CARD, ...base }} {...props} />
+      ) : (
+        <IdentityForm key="new-identity" initial={{ ...EMPTY_IDENTITY, ...base }} {...props} />
+      );
   } else if (creating === "note") {
     detail = (
       <NoteEditor
