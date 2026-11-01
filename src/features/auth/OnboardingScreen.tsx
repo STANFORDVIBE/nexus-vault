@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { AuthLayout } from "@/features/auth/AuthLayout";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
+import { VaultSwitcher } from "@/features/vaults/VaultSwitcher";
 import { estimateStrength } from "@/lib/password-strength";
 import { errorMessage } from "@/services/errors";
 import { createVault } from "@/services/vault";
@@ -21,6 +22,8 @@ export function OnboardingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const setStatus = useSessionStore((s) => s.setStatus);
+  const status = useSessionStore((s) => s.status);
+  const several = (status?.vaultCount ?? 1) > 1;
 
   const strength = estimateStrength(password);
   const tooShort = [...password].length < MIN_MASTER_LENGTH;
@@ -45,12 +48,15 @@ export function OnboardingScreen() {
 
   return (
     <AuthLayout
-      title="Создайте хранилище"
+      title={several ? `Создайте хранилище «${status?.vault.name}»` : "Создайте хранилище"}
       description="Все данные шифруются на этом компьютере мастер-паролем. Он нигде не хранится и не отправляется в сеть."
       footer={
         <>
-          <span className="text-xs text-muted-foreground">Уже есть резервная копия?</span>
-          <RestoreBackup variant="ghost" />
+          <span className="text-xs text-muted-foreground">Уже есть хранилище или копия?</span>
+          <div className="flex flex-wrap justify-center gap-1">
+            <RestoreBackup variant="ghost" />
+            <VaultSwitcher variant="auth" />
+          </div>
         </>
       }
     >

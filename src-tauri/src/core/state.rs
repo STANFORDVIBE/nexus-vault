@@ -7,6 +7,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use crate::core::error::{AppError, AppResult};
+use crate::core::registry::Registry;
 use crate::core::settings::Settings;
 use crate::core::vault::{self, UnlockedVault};
 use crate::crypto::kdf::KdfParams;
@@ -22,11 +23,23 @@ pub enum VaultState {
     Corrupted,
 }
 
+/// The vault the status refers to (name and file location are not secret).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveVault {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultStatus {
     pub state: VaultState,
     pub corrupted_items: usize,
+    pub vault: ActiveVault,
+    /// How many vaults are registered (the UI offers switching when > 1).
+    pub vault_count: usize,
 }
 
 pub struct AppState {
@@ -34,7 +47,9 @@ pub struct AppState {
 }
 
 pub struct Inner {
+    /// File of the active vault (`registry.active_entry().path`).
     pub db_path: PathBuf,
+    pub registry: Registry,
     db: Option<Database>,
     pub vault: Option<UnlockedVault>,
     pub settings: Settings,
@@ -45,9 +60,11 @@ pub struct Inner {
 }
 
 impl AppState {
-    pub fn new(db_path: PathBuf) -> Self {
+    pub fn new(data_dir: PathBuf) -> Self {
+        let registry = Registry::load(&data_dir);
         let mut inner = Inner {
-            db_path,
+            db_path: registry.active_entry().path.clone(),
+            registry,
             db: None,
             vault: None,
             settings: Settings::default(),
@@ -63,9 +80,11 @@ impl AppState {
         }
     }
 
+    /// Test state whose default vault is `db_path` (its file name must be `vault.db`).
     #[cfg(test)]
     pub fn for_tests(db_path: PathBuf) -> Self {
-        let state = AppState::new(db_path);
+        assert!(db_path.ends_with(crate::core::registry::DEFAULT_VAULT_FILE));
+        let state = AppState::new(db_path.parent().unwrap().to_path_buf());
         state.lock().kdf_params = KdfParams::TEST;
         state
     }
@@ -117,10 +136,51 @@ impl Inner {
                 Err(_) => VaultState::Corrupted,
             }
         };
+        let entry = self.registry.active_entry();
         VaultStatus {
             state,
             corrupted_items: self.vault.as_ref().map_or(0, |v| v.corrupted_items),
+            vault: ActiveVault {
+                id: entry.id.clone(),
+                name: entry.name.clone(),
+                path: entry.path.to_string_lossy().into_owned(),
+            },
+            vault_count: self.registry.vaults.len(),
         }
+    }
+
+    /// Locks and closes the current vault, then makes `id` the active one.
+    pub fn switch_to(&mut self, id: &str) -> AppResult<()> {
+        self.registry.set_active(id)?;
+        self.close_database();
+        self.db_path = self.registry.active_entry().path.clone();
+        self.pending_restore = None;
+        self.reload();
+        self.registry.save()
+    }
+
+    /// "Forgot the master password": moves the locked vault file aside (it is kept,
+    /// not deleted) so a new vault can be created in its place. Returns the new name.
+    pub fn reset_forgotten(&mut self) -> AppResult<String> {
+        if self.vault.is_some() {
+            return Err(AppError::Validation("vault_unlocked"));
+        }
+        if !self.db_path.exists() {
+            return Err(AppError::VaultNotInitialized);
+        }
+        self.close_database();
+        let archived = archive_path(&self.db_path);
+        std::fs::rename(&self.db_path, &archived)?;
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = self.db_path.clone().into_os_string();
+            sidecar.push(suffix);
+            let _ = std::fs::remove_file(sidecar);
+        }
+        self.settings = Settings::default();
+        Ok(archived
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default())
     }
 
     pub fn create_vault(&mut self, password: &str) -> AppResult<VaultStatus> {
@@ -153,6 +213,8 @@ impl Inner {
         self.settings = Settings::load(db);
         self.vault = Some(unlocked);
         self.touch();
+        self.registry.mark_opened();
+        let _ = self.registry.save();
         Ok(self.status())
     }
 
@@ -172,6 +234,22 @@ impl Inner {
         let db = self.db.as_mut().ok_or(AppError::VaultLocked)?;
         Ok((db, vault))
     }
+}
+
+/// `vault.db` -> `vault.forgotten-<millis>.db`, next to the original.
+fn archive_path(path: &std::path::Path) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "vault".into());
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    path.with_file_name(format!(
+        "{stem}.forgotten-{}{ext}",
+        crate::core::time::now_millis()
+    ))
 }
 
 #[cfg(test)]
@@ -219,5 +297,52 @@ mod tests {
         assert!(inner.unlock("correct horse battery").is_err());
         // creating a new vault must not silently overwrite the damaged file
         assert!(inner.create_vault("correct horse battery").is_err());
+    }
+
+    #[test]
+    fn switching_vaults_keeps_each_one_separate() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(dir.path().join("vault.db"));
+        let mut inner = state.lock();
+        inner.create_vault("correct horse battery").unwrap();
+        let first = inner.registry.active.clone();
+
+        let path = inner
+            .registry
+            .new_vault_path(&inner.registry.default_folder(), "Работа");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let work = inner.registry.add("Работа".into(), path).unwrap();
+        inner.switch_to(&work).unwrap();
+        assert!(inner.vault.is_none(), "switching locks the previous vault");
+        assert_eq!(inner.status().state, VaultState::Uninitialized);
+        assert_eq!(inner.status().vault.name, "Работа");
+        inner.create_vault("another long password").unwrap();
+
+        inner.switch_to(&first).unwrap();
+        assert_eq!(inner.status().state, VaultState::Locked);
+        assert!(inner.unlock("another long password").is_err());
+        inner.unlock("correct horse battery").unwrap();
+        assert_eq!(inner.status().vault_count, 2);
+    }
+
+    #[test]
+    fn forgotten_vault_is_moved_aside_not_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let state = AppState::for_tests(path.clone());
+        let mut inner = state.lock();
+        inner.create_vault("correct horse battery").unwrap();
+        assert!(
+            inner.reset_forgotten().is_err(),
+            "only a locked vault can be reset"
+        );
+        inner.lock_vault();
+
+        let archived = inner.reset_forgotten().unwrap();
+        assert!(archived.starts_with("vault.forgotten-") && archived.ends_with(".db"));
+        assert!(dir.path().join(&archived).exists());
+        assert!(!path.exists());
+        assert_eq!(inner.status().state, VaultState::Uninitialized);
+        inner.create_vault("a brand new password").unwrap();
     }
 }

@@ -4,6 +4,7 @@ pub mod error;
 pub mod folders;
 pub mod items;
 pub mod model;
+pub mod registry;
 pub mod settings;
 pub mod state;
 pub mod time;

@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { AuthLayout } from "@/features/auth/AuthLayout";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
+import { ForgotPasswordDialog } from "@/features/vaults/ForgotPasswordDialog";
+import { VaultSwitcher } from "@/features/vaults/VaultSwitcher";
 import { errorMessage, hasCode } from "@/services/errors";
 import { unlockVault } from "@/services/vault";
 import { useSessionStore } from "@/store/session";
@@ -15,6 +17,7 @@ export function UnlockScreen() {
   const [busy, setBusy] = useState(false);
   const setStatus = useSessionStore((s) => s.setStatus);
   const refresh = useSessionStore((s) => s.refresh);
+  const vaultName = useSessionStore((s) => s.status?.vault.name);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -36,8 +39,21 @@ export function UnlockScreen() {
   return (
     <AuthLayout
       title="Хранилище заблокировано"
-      description="Введите мастер-пароль, чтобы продолжить"
-      footer={<RestoreBackup variant="ghost" />}
+      description={
+        <>
+          Введите мастер-пароль хранилища{" "}
+          <span className="font-medium text-foreground">«{vaultName}»</span>
+        </>
+      }
+      footer={
+        <>
+          <ForgotPasswordDialog />
+          <div className="flex flex-wrap justify-center gap-1">
+            <RestoreBackup variant="ghost" />
+            <VaultSwitcher variant="auth" />
+          </div>
+        </>
+      }
     >
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
         <div className="grid gap-2">

@@ -84,7 +84,7 @@ pub async fn pick_backup_file(
 }
 
 /// Verifies the chosen backup with its master password and atomically replaces the
-/// current vault with it. The replaced vault is kept as `vault.previous.db`.
+/// current vault with it. The replaced vault is kept as `<name>.previous.db`.
 #[tauri::command]
 pub async fn restore_backup(
     app: AppHandle,
@@ -108,8 +108,8 @@ pub async fn restore_backup(
         if let Some(dir) = live.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let staging = live.with_file_name("vault.restore.db");
-        let previous = live.with_file_name("vault.previous.db");
+        let staging = backup::sibling(&live, "restore");
+        let previous = backup::sibling(&live, "previous");
         backup::write_database(&staging, &verified)?;
 
         // 3. switch: close the live vault, swap files, reload

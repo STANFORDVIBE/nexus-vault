@@ -122,4 +122,42 @@ describe("Nexus Vault app", () => {
     await user.click(screen.getByRole("link", { name: "Все записи" }));
     expect(await screen.findByText("Банк")).toBeInTheDocument();
   });
+
+  it("creates a second vault and switches back to the first one", async () => {
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+
+    await user.click(screen.getByRole("button", { name: /Сменить хранилище/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /Создать новое хранилище/ }));
+    await user.type(screen.getByLabelText("Название"), "Работа");
+    await user.click(screen.getByRole("button", { name: "Продолжить" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Создайте хранилище «Работа»" }),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Мастер-пароль"), "work-master-password");
+    await user.type(screen.getByLabelText("Повторите пароль"), "work-master-password");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Создать хранилище" }));
+    expect(await screen.findByText("Хранилище пока пустое")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Хранилище: Работа/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Основное" }));
+    expect(await screen.findByText("«Основное»")).toBeInTheDocument();
+    await unlock(user);
+    expect((await screen.findAllByText("GitHub")).length).toBeGreaterThan(0);
+  });
+
+  it("forgot password: starts over only after explicit confirmation", async () => {
+    const { user } = setup({ state: "locked", seed: true });
+    await user.click(await screen.findByRole("button", { name: "Забыли пароль?" }));
+
+    const startOver = screen.getByRole("button", { name: "Начать заново" });
+    expect(startOver).toBeDisabled();
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(startOver);
+
+    expect(await screen.findByRole("heading", { name: "Создайте хранилище" })).toBeInTheDocument();
+    expect(await screen.findByText(/Старый файл не удалён/)).toBeInTheDocument();
+  });
 });

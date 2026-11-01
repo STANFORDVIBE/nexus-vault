@@ -60,15 +60,16 @@ function hostOf(website: string): string {
 export function createMockBackend(options: MockOptions = {}) {
   let state: VaultState = options.state ?? "uninitialized";
   let password = options.password ?? "correct horse battery";
-  const items = new Map<string, MockItem>();
-  const folders = new Map<string, MockFolder>();
-  let settings: Settings = {
+  let items = new Map<string, MockItem>();
+  let folders = new Map<string, MockFolder>();
+  const defaultSettings = (): Settings => ({
     autoLockMinutes: 5,
     clipboardClearSeconds: 30,
     lockOnSystemLock: true,
     closeBehavior: "lock_to_tray",
     launchAtStartup: false,
-  };
+  });
+  let settings: Settings = defaultSettings();
   let pendingRestore = false;
   const clipboard: { value: string | null } = { value: null };
 
@@ -110,6 +111,64 @@ export function createMockBackend(options: MockOptions = {}) {
     });
   }
   if (options.seed) seed();
+
+  // ---- several vaults: the variables above always hold the active one ----
+  interface VaultSlot {
+    id: string;
+    name: string;
+    path: string;
+    lastOpenedAt: number | null;
+    state: VaultState;
+    password: string;
+    items: Map<string, MockItem>;
+    folders: Map<string, MockFolder>;
+    settings: Settings;
+  }
+  const slots: VaultSlot[] = [
+    {
+      id: "default",
+      name: "Основное",
+      path: String.raw`C:\Users\me\AppData\Roaming\com.nexusvault.app\vault.db`,
+      lastOpenedAt: null,
+      state,
+      password,
+      items,
+      folders,
+      settings,
+    },
+  ];
+  let activeId = "default";
+  const activeSlot = () => slots.find((s) => s.id === activeId)!;
+
+  function storeActive() {
+    Object.assign(activeSlot(), { state, password, items, folders, settings });
+  }
+
+  function activate(id: string) {
+    storeActive();
+    const slot = slots.find((s) => s.id === id) ?? fail("not_found");
+    activeId = slot.id;
+    if (slot.state === "unlocked") slot.state = "locked";
+    ({ state, password, items, folders, settings } = slot);
+    pendingRestore = false;
+    void emit("vault-locked");
+  }
+
+  function status() {
+    const slot = activeSlot();
+    return {
+      state,
+      corruptedItems: 0,
+      vault: { id: slot.id, name: slot.name, path: slot.path },
+      vaultCount: slots.length,
+    };
+  }
+
+  function checkName(name: unknown): string {
+    const n = String(name).trim();
+    if (!n || [...n].length > 64) fail("validation", "validation failed: vault_name");
+    return n;
+  }
 
   function requireUnlocked() {
     if (state === "uninitialized") fail("vault_not_initialized");
@@ -244,7 +303,7 @@ export function createMockBackend(options: MockOptions = {}) {
 
   const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
     get_app_info: () => ({ name: "Nexus Vault", version: "0.1.0" }),
-    get_vault_status: () => ({ state, corruptedItems: 0 }),
+    get_vault_status: () => status(),
     create_vault: ({ password: pw }) => {
       if (state !== "uninitialized") fail("vault_already_exists");
       if ([...(pw as string)].length < 10) {
@@ -252,17 +311,17 @@ export function createMockBackend(options: MockOptions = {}) {
       }
       password = pw as string;
       state = "unlocked";
-      return { state, corruptedItems: 0 };
+      return status();
     },
     unlock_vault: ({ password: pw }) => {
       if (state === "uninitialized") fail("vault_not_initialized");
       if (pw !== password) fail("invalid_password");
       state = "unlocked";
-      return { state, corruptedItems: 0 };
+      return status();
     },
     lock_vault: () => {
       if (state === "unlocked") state = "locked";
-      return { state, corruptedItems: 0 };
+      return status();
     },
     change_master_password: ({ current, new: next }) => {
       requireUnlocked();
@@ -429,6 +488,64 @@ export function createMockBackend(options: MockOptions = {}) {
     pick_backup_file: () => {
       pendingRestore = true;
       return { fileName: "nexus-vault-mock.nexus", createdAt: now(), sizeBytes: 4096 };
+    },
+    list_vaults: () => {
+      storeActive();
+      return slots.map((s) => ({
+        id: s.id,
+        name: s.name,
+        path: s.path,
+        lastOpenedAt: s.lastOpenedAt,
+        exists: s.state !== "uninitialized",
+        active: s.id === activeId,
+      }));
+    },
+    switch_vault: ({ id }) => {
+      if (id !== activeId) activate(id as string);
+      return status();
+    },
+    add_new_vault: ({ name }) => {
+      const n = checkName(name);
+      storeActive();
+      const id = randomId();
+      slots.push({
+        id,
+        name: n,
+        path: `C:\\Users\\me\\AppData\\Roaming\\com.nexusvault.app\\vaults\\${n}.nexusvault`,
+        lastOpenedAt: null,
+        state: "uninitialized",
+        password: "",
+        items: new Map(),
+        folders: new Map(),
+        settings: defaultSettings(),
+      });
+      activate(id);
+      return status();
+    },
+    open_vault_file: () => null,
+    rename_vault: ({ id, name }) => {
+      const slot = slots.find((s) => s.id === id) ?? fail("not_found");
+      slot.name = checkName(name);
+      return status();
+    },
+    forget_vault: ({ id }) => {
+      if (slots.length === 1) fail("validation", "validation failed: last_vault");
+      if (id === activeId) activate(slots.find((s) => s.id !== id)!.id);
+      slots.splice(
+        slots.findIndex((s) => s.id === id),
+        1,
+      );
+      return status();
+    },
+    reveal_vault: () => undefined,
+    reset_forgotten_vault: () => {
+      if (state === "unlocked") fail("validation", "validation failed: vault_unlocked");
+      if (state === "uninitialized") fail("vault_not_initialized");
+      state = "uninitialized";
+      items = new Map();
+      folders = new Map();
+      settings = defaultSettings();
+      return "vault.forgotten-1.db";
     },
     restore_backup: ({ password: pw }) => {
       if (!pendingRestore) fail("cancelled");

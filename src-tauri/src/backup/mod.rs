@@ -403,6 +403,15 @@ pub fn write_database(path: &Path, backup: &VerifiedBackup) -> AppResult<()> {
     Ok(())
 }
 
+/// `dir/vault.db` + "previous" -> `dir/vault.previous.db` (works for any vault name).
+pub fn sibling(live_db: &Path, tag: &str) -> PathBuf {
+    let stem = live_db
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "vault".into());
+    live_db.with_file_name(format!("{stem}.{tag}.db"))
+}
+
 fn sidecar(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(suffix);

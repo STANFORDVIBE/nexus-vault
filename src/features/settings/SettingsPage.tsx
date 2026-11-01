@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useLocation } from "react-router";
 import {
   ArchiveIcon,
+  DatabaseIcon,
   InfoIcon,
   MonitorIcon,
   MoonIcon,
@@ -26,6 +28,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ChangeMasterPassword } from "@/features/settings/ChangeMasterPassword";
+import { VaultsSettings } from "@/features/vaults/VaultsSettings";
 import { useAppInfo } from "@/hooks/useAppInfo";
 import { errorMessage } from "@/services/errors";
 import { createBackup } from "@/services/vault";
@@ -172,6 +175,12 @@ export function SettingsPage() {
   const theme = useThemeStore((s) => s.preference);
   const setTheme = useThemeStore((s) => s.setPreference);
   const appInfo = useAppInfo();
+  const { hash } = useLocation();
+
+  useEffect(() => {
+    // links like /settings#vaults scroll to their section
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [hash]);
 
   async function save(patch: Partial<Settings>) {
     try {
@@ -187,6 +196,10 @@ export function SettingsPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-8 py-8">
       <PageHeader title="Настройки" />
+
+      <Section id="vaults" icon={DatabaseIcon} title="Хранилища">
+        <VaultsSettings />
+      </Section>
 
       {settings && (
         <>

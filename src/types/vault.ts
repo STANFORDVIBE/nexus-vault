@@ -2,9 +2,28 @@
 
 export type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted";
 
+export interface ActiveVault {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface VaultStatus {
   state: VaultState;
   corruptedItems: number;
+  vault: ActiveVault;
+  /** Registered vaults; switching is offered when there is more than one. */
+  vaultCount: number;
+}
+
+export interface VaultListEntry {
+  id: string;
+  name: string;
+  path: string;
+  lastOpenedAt: number | null;
+  /** False when the file was moved or deleted outside the app. */
+  exists: boolean;
+  active: boolean;
 }
 
 export type ItemType = "login" | "secure_note";

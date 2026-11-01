@@ -83,7 +83,7 @@ export function RestoreBackup({
               <DialogTitle>Восстановление из копии</DialogTitle>
               <DialogDescription>
                 Текущее хранилище будет заменено содержимым копии. Предыдущая версия сохранится
-                рядом как <span className="font-mono text-xs">vault.previous.db</span>.
+                рядом с пометкой <span className="font-mono text-xs">.previous</span>.
               </DialogDescription>
             </DialogHeader>
 

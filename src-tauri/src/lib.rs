@@ -15,8 +15,6 @@ use crate::core::state::AppState;
 use crate::platform::autostart::MINIMIZED_ARG;
 use crate::platform::{lock, tray, window};
 
-const VAULT_FILE: &str = "vault.db";
-
 /// Where the vault lives. Debug builds honour `NEXUS_VAULT_DATA_DIR` so manual and
 /// automated testing never touch the real vault; release builds ignore it.
 fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
@@ -68,7 +66,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = data_dir(app)?;
-            let state: commands::SharedState = Arc::new(AppState::new(data_dir.join(VAULT_FILE)));
+            let state: commands::SharedState = Arc::new(AppState::new(data_dir));
             app.manage(state);
 
             let handle = app.handle();
@@ -117,6 +115,14 @@ pub fn run() {
             commands::backup::create_backup,
             commands::backup::pick_backup_file,
             commands::backup::restore_backup,
+            commands::vaults::list_vaults,
+            commands::vaults::switch_vault,
+            commands::vaults::add_new_vault,
+            commands::vaults::open_vault_file,
+            commands::vaults::rename_vault,
+            commands::vaults::forget_vault,
+            commands::vaults::reveal_vault,
+            commands::vaults::reset_forgotten_vault,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

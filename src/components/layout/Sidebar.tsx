@@ -1,4 +1,4 @@
-import { NavLink } from "react-router";
+import { NavLink, useNavigate } from "react-router";
 import { cn } from "cn";
 import { FolderIcon } from "lucide-react";
 import { NAV_SECTIONS, SETTINGS_NAV } from "@/app/navigation";
@@ -6,6 +6,7 @@ import { Logo } from "@/components/common/Logo";
 import { Separator } from "@/components/ui/separator";
 import { SidebarNavLink } from "@/components/layout/SidebarNavLink";
 import { VaultStatus } from "@/components/layout/VaultStatus";
+import { VaultSwitcher } from "@/features/vaults/VaultSwitcher";
 import { useVaultQuery } from "@/hooks/useVaultQuery";
 import { listFolders } from "@/services/vault";
 
@@ -42,10 +43,14 @@ function FolderLinks() {
 }
 
 export function Sidebar() {
+  const navigate = useNavigate();
   return (
     <aside className="flex h-full w-[232px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-14 shrink-0 items-center px-4">
         <Logo />
+      </div>
+      <div className="px-2 pb-1">
+        <VaultSwitcher variant="sidebar" onManage={() => void navigate("/settings#vaults")} />
       </div>
 
       <nav

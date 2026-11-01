@@ -35,6 +35,10 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   auto_lock_minutes: "Автоблокировка — не больше 24 часов",
   clipboard_clear_seconds: "Очистка буфера — не дольше 10 минут",
   type: "Неизвестный тип записи",
+  vault_name: "Название хранилища: от 1 до 64 символов",
+  last_vault: "Нельзя убрать единственное хранилище",
+  not_a_vault: "Этот файл не является хранилищем Nexus Vault",
+  vault_unlocked: "Сначала заблокируйте хранилище",
 };
 
 const MESSAGES: Record<string, string> = {

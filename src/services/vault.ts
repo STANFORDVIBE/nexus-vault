@@ -13,6 +13,7 @@ import type {
   ItemSummary,
   RestoreSummary,
   Settings,
+  VaultListEntry,
   VaultStatus,
 } from "@/types/vault";
 
@@ -24,6 +25,20 @@ export const lockVault = () => invoke<VaultStatus>("lock_vault");
 export const changeMasterPassword = (current: string, next: string) =>
   invoke<void>("change_master_password", { current, new: next });
 export const reportActivity = () => invoke<void>("report_activity");
+
+// ---- several vaults ----
+export const listVaults = () => invoke<VaultListEntry[]>("list_vaults");
+export const switchVault = (id: string) => invoke<VaultStatus>("switch_vault", { id });
+/** Resolves to `null` when the folder dialog was cancelled. */
+export const addNewVault = (name: string, chooseFolder: boolean) =>
+  invoke<VaultStatus | null>("add_new_vault", { name, chooseFolder });
+export const openVaultFile = () => invoke<VaultStatus | null>("open_vault_file");
+export const renameVault = (id: string, name: string) =>
+  invoke<VaultStatus>("rename_vault", { id, name });
+export const forgetVault = (id: string) => invoke<VaultStatus>("forget_vault", { id });
+export const revealVault = (id: string) => invoke<void>("reveal_vault", { id });
+/** Resolves to the file name the forgotten vault was renamed to. */
+export const resetForgottenVault = () => invoke<string>("reset_forgotten_vault");
 
 // ---- items ----
 export const listItems = (filter: ItemFilter) => invoke<ItemSummary[]>("list_items", { filter });
