@@ -17,13 +17,31 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+argon2 = "0.6.0"
+chacha20poly1305 = { version = "0.11.0", features = ["zeroize"] }
+zeroize = { version = "1.9.1", features = ["derive", "std"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+rand = "0.10.3"
+uuid = { version = "1.29.0", features = ["v4"] }
+getrandom = "0.4"
+bip39 = { version = "3.0.0", default-features = false }
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-notification = "2.8.0"
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-opener = "2.7.2"
+arboard = "3.7.0"
+sha2 = "0.11.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop"] }
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [lints.clippy]
 dbg_macro = "deny"
@@ -37,3 +55,6 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
