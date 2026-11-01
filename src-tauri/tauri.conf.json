@@ -19,7 +19,9 @@
         "height": 760,
         "minWidth": 760,
         "minHeight": 520,
-        "center": true
+        "center": true,
+        "theme": "Dark",
+        "backgroundColor": "#15171B"
       }
     ],
     "withGlobalTauri": false,

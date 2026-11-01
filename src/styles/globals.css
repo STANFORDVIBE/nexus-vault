@@ -1,34 +1,202 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
 
-/* Base palette tokens. The full design system (light theme, components) lands in Phase 2. */
-@theme {
-  --color-background: #15171b;
-  --color-sidebar: #191c21;
-  --color-surface: #1d2026;
-  --color-elevated: #292d35;
-  --color-hover: #252932;
-  --color-border: #30343d;
-  --color-text: #f0f0f2;
-  --color-text-secondary: #9299a5;
-  --color-accent: #c6a878;
-  --color-success: #6bbf91;
-  --color-danger: #d87878;
+@custom-variant dark (&:is(.dark *));
 
-  --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+/*
+ * Premium Graphite design tokens.
+ * Light values live on :root, dark values on .dark (the default, set on <html>).
+ * shadcn names are kept so generated components work as-is; note that shadcn's
+ * `accent` is the neutral hover surface, while our gold accent is `primary` / `brand`.
+ */
+:root {
+  --background: #f5f5f7;
+  --foreground: #17191d;
+  --card: #ffffff;
+  --card-foreground: #17191d;
+  --popover: #ffffff;
+  --popover-foreground: #17191d;
+  --primary: #8c6c3a;
+  --primary-foreground: #ffffff;
+  --secondary: #eaebee;
+  --secondary-foreground: #17191d;
+  --muted: #eeeff2;
+  --muted-foreground: #5d6470;
+  --accent: #e8e9ed;
+  --accent-foreground: #17191d;
+  --destructive: #c24e4e;
+  --success: #2f8a5b;
+  --brand: #8c6c3a;
+  --border: #dddfe4;
+  --input: #d3d6dc;
+  --ring: #8c6c3a;
+  --surface: #ffffff;
+  --elevated: #ffffff;
+  --hover: #e8e9ed;
+  --sidebar: #eeeff2;
+  --sidebar-foreground: #17191d;
+  --sidebar-primary: #8c6c3a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e2e4e8;
+  --sidebar-accent-foreground: #17191d;
+  --sidebar-border: #dddfe4;
+  --sidebar-ring: #8c6c3a;
+
+  --radius: 10px;
+  color-scheme: light;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+.dark {
+  --background: #15171b;
+  --foreground: #f0f0f2;
+  --card: #1d2026;
+  --card-foreground: #f0f0f2;
+  --popover: #292d35;
+  --popover-foreground: #f0f0f2;
+  --primary: #c6a878;
+  --primary-foreground: #15171b;
+  --secondary: #292d35;
+  --secondary-foreground: #f0f0f2;
+  --muted: #252932;
+  --muted-foreground: #9299a5;
+  --accent: #252932;
+  --accent-foreground: #f0f0f2;
+  --destructive: #d87878;
+  --success: #6bbf91;
+  --brand: #c6a878;
+  --border: #30343d;
+  --input: #30343d;
+  --ring: #c6a878;
+  --surface: #1d2026;
+  --elevated: #292d35;
+  --hover: #252932;
+  --sidebar: #191c21;
+  --sidebar-foreground: #f0f0f2;
+  --sidebar-primary: #c6a878;
+  --sidebar-primary-foreground: #15171b;
+  --sidebar-accent: #252932;
+  --sidebar-accent-foreground: #f0f0f2;
+  --sidebar-border: #262a31;
+  --sidebar-ring: #c6a878;
+
+  color-scheme: dark;
 }
 
-body {
-  margin: 0;
-  background-color: var(--color-background);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
+@theme inline {
+  --font-sans: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-brand: var(--brand);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-hover: var(--hover);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* 8px for buttons/inputs (md), 10px for cards (lg) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: var(--radius);
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-4xl: 26px;
+
+  --default-transition-duration: 150ms;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html {
+    @apply font-sans;
+    font-size: 14px;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    margin: 0;
+    /* Desktop app: text is selectable only where it makes sense (inputs, values) */
+    user-select: none;
+  }
+  input,
+  textarea,
+  [data-selectable] {
+    user-select: text;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading font-semibold tracking-tight;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background-color: color-mix(in oklab, var(--brand) 35%, transparent);
+  }
+  /* Thin, theme-aware scrollbars for WebView2 */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after {
+    transition: none !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      transition-duration: 1ms !important;
+    }
+  }
 }

@@ -32,4 +32,9 @@ export default tseslint.config(
       "no-console": ["error", { allow: ["warn", "error"] }],
     },
   },
+  {
+    // shadcn/ui components export their cva variants next to the component by design
+    files: ["src/components/ui/**/*.tsx"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 );
