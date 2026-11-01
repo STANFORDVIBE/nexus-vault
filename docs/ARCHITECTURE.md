@@ -15,11 +15,12 @@
 │ core/      — сессия хранилища (Locked/Unlocked)  │
 │ crypto/    — KDF, AEAD, envelope, генератор      │
 │ database/  — SQLite, миграции, репозитории       │
-│ backup/    — формат .nexus                       │
+│ backup/    — формат .nexus, автокопии            │
 │ platform/  — трей, буфер обмена, автоблокировка  │
 └───────────────┬─────────────────────────────────┘
                 ▼
-        %APPDATA%\<app-id>\vault.db (SQLite, WAL)
+        %APPDATA%\<app-id>\vault.db, vaults\*.nexusvault
+        + vaults.json (реестр хранилищ)
 ```
 
 Граница доверия — IPC. Всё, что выше неё, считается потенциально скомпрометированным
@@ -33,7 +34,7 @@
   затирается в Rust; на фронте поле очищается после отправки.
 - Tauri capabilities: без `fs`, `shell`, `http`. Плагины — только нужные
   (dialog для выбора файла бэкапа, autostart, global-shortcut, notification,
-  single-instance, opener для http(s)-ссылок). Буфер обмена — крейт `arboard` в Rust.
+  single-instance, opener для http(s)-ссылок, updater — вызывается только из Rust). Буфер обмена — крейт `arboard` в Rust.
   CSP строгая, без внешних источников.
 
 ## 2. Криптография
@@ -60,6 +61,13 @@ Vault Key ──XChaCha20-Poly1305──► payload каждой записи и
 - `crypto_version` в каждой строке → поддержка старых форматов при обновлениях.
 - Неверный пароль определяется ошибкой аутентификации envelope; отдельного хеша пароля
   в базе нет.
+- Второй конверт `key_envelopes.id = "hello"`: Vault Key под ключом из подписи Windows
+  Hello (`platform/hello.rs`, `core/vault.rs`). Первые 32 байта `wrapped_key` — challenge.
+
+Типы записей: `login`, `secure_note`, `card`, `identity` (enum `ItemPayload`, serde
+`{type, payload}`). Новые поля добавляются с `#[serde(default)]`, старые записи читаются.
+У любого типа есть `fields` — свои поля, скрытые маскируются как пароль. Дату смены пароля
+(`password_changed_at`) ставит бэкенд — по ней проверка паролей находит старые.
 
 ## 3. База данных
 
@@ -83,6 +91,9 @@ Vault Key ──XChaCha20-Poly1305──► payload каждой записи и
 Теги хранятся только внутри зашифрованного payload записи. Таблиц `tags`, `item_tags`
 и `attachments` из примера в ТЗ нет: связи «запись — тег» в открытом виде раскрывали бы
 структуру хранилища, а вложения не входят в MVP.
+
+Несколько хранилищ: `core/registry.rs` ведёт `vaults.json` (id, имя, путь, активное).
+Одновременно открыто одно; переключение блокирует текущее.
 
 ## 4. Поиск
 
@@ -162,5 +173,10 @@ FTS по открытому тексту запрещён. При разблок
 
 ## 9. Сборка и CI
 
-npm + `package-lock.json`, `Cargo.lock` в репозитории. GitHub Actions на `windows-latest`:
+npm + `package-lock.json`, `Cargo.lock` в репозитории. Релиз —
+`scripts/build-release.ps1`: подключает `tauri.release.conf.json`
+(`createUpdaterArtifacts`), подписывает установщик ключом из `%USERPROFILE%\.tauri` и
+пишет `latest.json`. Приложение берёт его по адресу
+`github.com/STANFORDVIBE/nexus-vault/releases/latest/download/latest.json`.
+Строки установщика — `src-tauri/nsis/Russian.nsh`. GitHub Actions на `windows-latest`:
 lint, typecheck, Vitest, `cargo clippy`, `cargo test`, сборка установщика (NSIS).

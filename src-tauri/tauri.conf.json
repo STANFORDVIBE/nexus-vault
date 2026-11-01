@@ -34,9 +34,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis"
-    ],
+    "targets": ["nsis"],
     "publisher": "Nexus Vault",
     "category": "Utility",
     "shortDescription": "Local-first password manager",
@@ -50,9 +48,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": [
-          "Russian"
-        ],
+        "languages": ["Russian"],
         "displayLanguageSelector": false,
         "customLanguageFiles": {
           "Russian": "nsis/Russian.nsh"
