@@ -11,6 +11,8 @@ import type {
   ItemFilter,
   ItemInput,
   ItemSummary,
+  AutoBackupStatus,
+  ExportFormat,
   RestoreSummary,
   Settings,
   VaultListEntry,
@@ -85,3 +87,11 @@ export const createBackup = () => invoke<string | null>("create_backup");
 export const pickBackupFile = () => invoke<BackupInfo | null>("pick_backup_file");
 export const restoreBackup = (password: string) =>
   invoke<RestoreSummary>("restore_backup", { password });
+export const getAutoBackupStatus = () => invoke<AutoBackupStatus>("get_auto_backup_status");
+/** Resolves to the file name of the new copy. */
+export const runAutoBackupNow = () => invoke<string>("run_auto_backup_now");
+export const chooseAutoBackupFolder = () => invoke<string | null>("choose_auto_backup_folder");
+export const openAutoBackupFolder = () => invoke<void>("open_auto_backup_folder");
+/** Unencrypted export; resolves to the file name, or `null` if the dialog was cancelled. */
+export const exportVault = (password: string, format: ExportFormat) =>
+  invoke<string | null>("export_vault", { password, format });

@@ -18,8 +18,9 @@ pub enum CloseBehavior {
     Exit,
 }
 
+// `default`: settings saved by an older version (without newer fields) still load.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     /// Minutes of inactivity before auto-lock; 0 disables it.
     pub auto_lock_minutes: u32,
@@ -28,6 +29,13 @@ pub struct Settings {
     pub lock_on_system_lock: bool,
     pub close_behavior: CloseBehavior,
     pub launch_at_startup: bool,
+    /// Encrypted `.nexus` copies written automatically while the vault is unlocked.
+    pub auto_backup: bool,
+    pub auto_backup_interval_hours: u32,
+    /// How many automatic copies to keep; older ones are deleted.
+    pub auto_backup_keep: u32,
+    /// Custom folder; `None` = `<data dir>/backups`.
+    pub auto_backup_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -38,6 +46,10 @@ impl Default for Settings {
             lock_on_system_lock: true,
             close_behavior: CloseBehavior::LockToTray,
             launch_at_startup: false,
+            auto_backup: true,
+            auto_backup_interval_hours: 24,
+            auto_backup_keep: 10,
+            auto_backup_dir: None,
         }
     }
 }
@@ -51,6 +63,19 @@ impl Settings {
         }
         if self.clipboard_clear_seconds > 10 * 60 {
             return Err(AppError::Validation("clipboard_clear_seconds"));
+        }
+        if !(1..=24 * 30).contains(&self.auto_backup_interval_hours) {
+            return Err(AppError::Validation("auto_backup_interval_hours"));
+        }
+        if !(1..=100).contains(&self.auto_backup_keep) {
+            return Err(AppError::Validation("auto_backup_keep"));
+        }
+        if self
+            .auto_backup_dir
+            .as_deref()
+            .is_some_and(|d| d.is_empty() || d.len() > 1024)
+        {
+            return Err(AppError::Validation("auto_backup_dir"));
         }
         Ok(())
     }
@@ -87,6 +112,18 @@ mod tests {
         };
         custom.save(&mut db).unwrap();
         assert_eq!(Settings::load(&db), custom);
+    }
+
+    #[test]
+    fn settings_from_an_older_version_keep_their_values() {
+        let mut db = Database::open_in_memory().unwrap();
+        let old = r#"{"autoLockMinutes":15,"clipboardClearSeconds":30,"lockOnSystemLock":true,"closeBehavior":"exit","launchAtStartup":false}"#;
+        db.transaction(|tx| repo::set_setting(tx, KEY, old))
+            .unwrap();
+        let loaded = Settings::load(&db);
+        assert_eq!(loaded.auto_lock_minutes, 15);
+        assert_eq!(loaded.close_behavior, CloseBehavior::Exit);
+        assert!(loaded.auto_backup);
     }
 
     #[test]

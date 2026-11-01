@@ -134,6 +134,11 @@ impl Registry {
         self.vaults.iter().find(|v| normalize(&v.path) == wanted)
     }
 
+    /// Default folder for automatic backups.
+    pub fn backups_folder(&self) -> PathBuf {
+        self.data_dir.join("backups")
+    }
+
     /// Where "new vault" puts files when the user does not pick a folder.
     pub fn default_folder(&self) -> PathBuf {
         self.data_dir.join("vaults")

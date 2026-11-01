@@ -160,4 +160,30 @@ describe("Nexus Vault app", () => {
     expect(await screen.findByRole("heading", { name: "Создайте хранилище" })).toBeInTheDocument();
     expect(await screen.findByText(/Старый файл не удалён/)).toBeInTheDocument();
   });
+
+  it("exports only after the master password is confirmed", async () => {
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+    await user.click(screen.getByRole("link", { name: "Настройки" }));
+    await user.click(await screen.findByRole("button", { name: "Экспорт…" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Мастер-пароль"), "wrong");
+    await user.click(within(dialog).getByRole("button", { name: "Выбрать, куда сохранить" }));
+    expect(await within(dialog).findByText("Неверный мастер-пароль")).toBeInTheDocument();
+
+    await user.clear(within(dialog).getByLabelText("Мастер-пароль"));
+    await user.type(within(dialog).getByLabelText("Мастер-пароль"), PASSWORD);
+    await user.click(within(dialog).getByRole("button", { name: "Выбрать, куда сохранить" }));
+    expect(await screen.findByText("Экспорт сохранён")).toBeInTheDocument();
+  });
+
+  it("makes an automatic backup on demand", async () => {
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+    await user.click(screen.getByRole("link", { name: "Настройки" }));
+    await user.click(await screen.findByRole("button", { name: "Сделать копию сейчас" }));
+    expect(await screen.findByText("Копия сохранена")).toBeInTheDocument();
+    expect(await screen.findByText(/Сейчас хранится: 1/)).toBeInTheDocument();
+  });
 });

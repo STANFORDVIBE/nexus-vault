@@ -149,6 +149,39 @@ impl Inner {
         }
     }
 
+    /// Folder for automatic copies of the active vault.
+    pub fn auto_backup_folder(&self) -> PathBuf {
+        self.settings
+            .auto_backup_dir
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.registry.backups_folder())
+    }
+
+    pub fn auto_backup_prefix(&self) -> String {
+        crate::backup::auto::file_prefix(&self.db_path, &self.registry.active)
+    }
+
+    /// Writes an automatic copy if one is due (or always with `force`).
+    /// Returns the written file, or `None` when nothing was due.
+    pub fn run_auto_backup(&mut self, force: bool) -> AppResult<Option<PathBuf>> {
+        use crate::backup::auto;
+        if !force && !self.settings.auto_backup {
+            return Ok(None);
+        }
+        let folder = self.auto_backup_folder();
+        let prefix = self.auto_backup_prefix();
+        let keep = self.settings.auto_backup_keep as usize;
+        let interval = self.settings.auto_backup_interval_hours;
+        let now = crate::core::time::now_millis();
+        let vault = self.vault.as_ref().ok_or(AppError::VaultLocked)?;
+        let db = self.db.as_mut().ok_or(AppError::VaultLocked)?;
+        if !force && !auto::is_due(auto::last_backup_at(db), interval, now) {
+            return Ok(None);
+        }
+        auto::run(&folder, &prefix, keep, db, &vault.key, now).map(Some)
+    }
+
     /// Locks and closes the current vault, then makes `id` the active one.
     pub fn switch_to(&mut self, id: &str) -> AppResult<()> {
         self.registry.set_active(id)?;

@@ -17,6 +17,11 @@ function useBackendEvents() {
     const unlisteners = [
       listen("vault-locked", () => markLocked()),
       listen("clipboard-cleared", () => toast("Буфер обмена очищен")),
+      listen("auto-backup-failed", () =>
+        toast.error("Не удалось сделать автоматическую копию", {
+          description: "Проверьте папку для автокопий в настройках",
+        }),
+      ),
     ];
     return () => {
       for (const promise of unlisteners) void promise.then((unlisten) => unlisten());

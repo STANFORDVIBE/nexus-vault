@@ -1,28 +1,21 @@
 use secrecy::{ExposeSecret, SecretString};
+use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
-use crate::backup::{self, BackupInfo, EXTENSION, RestoreSummary};
+use crate::backup::{self, BackupInfo, EXTENSION, RestoreSummary, auto};
 use crate::commands::{SharedState, blocking};
 use crate::core::error::{AppError, AppResult};
-use crate::core::time::now_millis;
+use crate::core::export::{self, ExportFormat};
+use crate::core::time::{date_stamp, now_millis};
+use crate::core::vault;
 use crate::platform::lock::on_vault_locked;
 
 const FILTER_NAME: &str = "Резервная копия Nexus Vault";
 
 fn default_file_name() -> String {
-    // yyyy-mm-dd from unix days (civil-from-days, Howard Hinnant)
-    let days = now_millis().div_euclid(86_400_000);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("nexus-vault-{year:04}-{month:02}-{day:02}.{EXTENSION}")
+    format!("nexus-vault-{}.{EXTENSION}", date_stamp(now_millis()))
 }
 
 /// Asks where to save, then writes an encrypted backup. Returns the file name,
@@ -124,6 +117,128 @@ pub async fn restore_backup(
     .await?;
     on_vault_locked(&app);
     Ok(summary)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoBackupStatus {
+    pub last_at: Option<i64>,
+    pub folder: String,
+    pub count: usize,
+}
+
+/// Where automatic copies go, when the last one was made and how many exist.
+#[tauri::command]
+pub async fn get_auto_backup_status(state: State<'_, SharedState>) -> AppResult<AutoBackupStatus> {
+    let mut inner = state.lock();
+    let folder = inner.auto_backup_folder();
+    let prefix = inner.auto_backup_prefix();
+    let (db, _) = inner.unlocked()?;
+    Ok(AutoBackupStatus {
+        last_at: auto::last_backup_at(db),
+        folder: folder.to_string_lossy().into_owned(),
+        count: auto::list(&folder, &prefix).len(),
+    })
+}
+
+/// "Make a copy now" in the automatic backups folder. Returns the file name.
+#[tauri::command]
+pub async fn run_auto_backup_now(state: State<'_, SharedState>) -> AppResult<String> {
+    let state = state.inner().clone();
+    blocking(move || {
+        let mut inner = state.lock();
+        inner.touch();
+        let path = inner.run_auto_backup(true)?.ok_or(AppError::Internal)?;
+        Ok(path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default())
+    })
+    .await
+}
+
+/// Folder picker for automatic backups. Only returns the path; the UI saves it in
+/// settings. `None` if cancelled.
+#[tauri::command]
+pub async fn choose_auto_backup_folder(app: AppHandle) -> AppResult<Option<String>> {
+    let picked = blocking(move || {
+        Ok(app
+            .dialog()
+            .file()
+            .set_title("Папка для автоматических копий")
+            .blocking_pick_folder())
+    })
+    .await?;
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn open_auto_backup_folder(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> AppResult<()> {
+    let folder = state.lock().auto_backup_folder();
+    std::fs::create_dir_all(&folder)?;
+    app.opener()
+        .open_path(folder.to_string_lossy(), None::<&str>)
+        .map_err(|_| AppError::NotFound)
+}
+
+/// Unencrypted export (CSV or JSON). Requires the master password again; returns the
+/// file name, or `None` if the save dialog was cancelled.
+#[tauri::command]
+pub async fn export_vault(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    password: SecretString,
+    format: ExportFormat,
+) -> AppResult<Option<String>> {
+    // verify first (slow Argon2id), so a wrong password fails before any dialog
+    let verify_state = state.inner().clone();
+    blocking(move || {
+        let mut inner = verify_state.lock();
+        inner.touch();
+        let (db, unlocked) = inner.unlocked()?;
+        vault::check_master_password(db, unlocked, password.expose_secret())
+    })
+    .await?;
+
+    let picked = blocking(move || {
+        let name = format!(
+            "nexus-vault-export-{}.{}",
+            date_stamp(now_millis()),
+            format.extension()
+        );
+        Ok(app
+            .dialog()
+            .file()
+            .set_title("Экспорт без шифрования")
+            .add_filter(format.extension().to_uppercase(), &[format.extension()])
+            .set_file_name(name)
+            .blocking_save_file())
+    })
+    .await?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+
+    let state = state.inner().clone();
+    blocking(move || {
+        let mut inner = state.lock();
+        let (_, unlocked) = inner.unlocked()?;
+        let text = export::render(unlocked, format, now_millis())?;
+        // UTF-8 BOM so Excel shows Cyrillic correctly in the CSV
+        let mut bytes = zeroize::Zeroizing::new(Vec::with_capacity(text.len() + 3));
+        if format == ExportFormat::Csv {
+            bytes.extend_from_slice(b"\xEF\xBB\xBF");
+        }
+        bytes.extend_from_slice(text.as_bytes());
+        std::fs::write(&path, &*bytes)?;
+        Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()))
+    })
+    .await
 }
 
 #[cfg(test)]

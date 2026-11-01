@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { AutoBackupSettings } from "@/features/backup/AutoBackupSettings";
+import { ExportVault } from "@/features/backup/ExportVault";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ChangeMasterPassword } from "@/features/settings/ChangeMasterPassword";
 import { VaultsSettings } from "@/features/vaults/VaultsSettings";
@@ -296,8 +298,9 @@ export function SettingsPage() {
       </Section>
 
       <Section id="backup" icon={ArchiveIcon} title="Резервные копии">
+        {settings && <AutoBackupSettings settings={settings} save={save} />}
         <Row
-          label="Создать резервную копию"
+          label="Копия в выбранное место"
           description="Файл .nexus зашифрован текущим мастер-паролем. Храните копию на флешке или в облаке — без пароля её не открыть"
         >
           <BackupButton />
@@ -307,6 +310,12 @@ export function SettingsPage() {
           description="Текущее хранилище будет заменено. Предыдущая версия сохранится рядом"
         >
           <RestoreBackup />
+        </Row>
+        <Row
+          label="Экспорт"
+          description="Незашифрованный файл CSV или JSON — чтобы перенести данные в другой менеджер паролей"
+        >
+          <ExportVault />
         </Row>
       </Section>
 

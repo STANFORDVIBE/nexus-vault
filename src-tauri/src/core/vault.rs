@@ -285,6 +285,22 @@ pub(crate) fn load_contents(
     })
 }
 
+/// Confirms `password` is the master password of this unlocked vault (used before
+/// sensitive actions such as a plaintext export).
+pub fn check_master_password(
+    db: &Database,
+    vault: &UnlockedVault,
+    password: &str,
+) -> AppResult<()> {
+    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
+    let envelope = repo::load_envelope(db.conn())?.ok_or(AppError::Integrity)?;
+    let key = unwrap_vault_key(&meta, &envelope, password)?;
+    if key.expose() != vault.key.expose() {
+        return Err(AppError::Integrity);
+    }
+    Ok(())
+}
+
 /// Re-wraps the Vault Key under a new master password. Items are untouched, so the
 /// change is a single small transaction and cannot leave the vault half-migrated.
 pub fn change_master_password(

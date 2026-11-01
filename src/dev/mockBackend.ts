@@ -68,9 +68,14 @@ export function createMockBackend(options: MockOptions = {}) {
     lockOnSystemLock: true,
     closeBehavior: "lock_to_tray",
     launchAtStartup: false,
+    autoBackup: true,
+    autoBackupIntervalHours: 24,
+    autoBackupKeep: 10,
+    autoBackupDir: null,
   });
   let settings: Settings = defaultSettings();
   let pendingRestore = false;
+  let autoBackups: number[] = [];
   const clipboard: { value: string | null } = { value: null };
 
   const now = () => Date.now();
@@ -484,6 +489,28 @@ export function createMockBackend(options: MockOptions = {}) {
     create_backup: () => {
       requireUnlocked();
       return "nexus-vault-mock.nexus";
+    },
+    get_auto_backup_status: () => {
+      requireUnlocked();
+      return {
+        lastAt: autoBackups.at(-1) ?? null,
+        folder:
+          settings.autoBackupDir ??
+          String.raw`C:\Users\me\AppData\Roaming\com.nexusvault.app\backups`,
+        count: autoBackups.length,
+      };
+    },
+    run_auto_backup_now: () => {
+      requireUnlocked();
+      autoBackups = [...autoBackups, now()].slice(-settings.autoBackupKeep);
+      return "auto-vault-mock.nexus";
+    },
+    choose_auto_backup_folder: () => String.raw`D:\Backups`,
+    open_auto_backup_folder: () => undefined,
+    export_vault: ({ password: pw, format }) => {
+      requireUnlocked();
+      if (pw !== password) fail("invalid_password");
+      return `nexus-vault-export.${format as string}`;
     },
     pick_backup_file: () => {
       pendingRestore = true;

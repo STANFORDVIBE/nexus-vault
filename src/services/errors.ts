@@ -39,6 +39,9 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   last_vault: "Нельзя убрать единственное хранилище",
   not_a_vault: "Этот файл не является хранилищем Nexus Vault",
   vault_unlocked: "Сначала заблокируйте хранилище",
+  auto_backup_interval_hours: "Интервал автокопий — от 1 часа до 30 дней",
+  auto_backup_keep: "Хранить можно от 1 до 100 автокопий",
+  auto_backup_dir: "Выберите папку для автокопий заново",
 };
 
 const MESSAGES: Record<string, string> = {

@@ -44,6 +44,27 @@ pub fn start_auto_lock(app: &AppHandle) {
     });
 }
 
+/// Background writer of automatic backups: checks once a minute while unlocked.
+pub fn start_auto_backup(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+            let result = {
+                let state = app.state::<SharedState>();
+                let mut inner = state.lock();
+                if inner.vault.is_none() {
+                    continue;
+                }
+                inner.run_auto_backup(false)
+            };
+            if result.is_err() {
+                let _ = app.emit(events::AUTO_BACKUP_FAILED, ());
+            }
+        }
+    });
+}
+
 /// Locks the vault when the Windows session is locked (Win+L, lid close, ...).
 pub fn watch_system_lock(app: &AppHandle) {
     #[cfg(windows)]

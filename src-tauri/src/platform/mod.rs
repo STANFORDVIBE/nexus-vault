@@ -13,4 +13,5 @@ pub mod events {
     pub const VAULT_LOCKED: &str = "vault-locked";
     pub const QUICK_SEARCH: &str = "quick-search";
     pub const CLIPBOARD_CLEARED: &str = "clipboard-cleared";
+    pub const AUTO_BACKUP_FAILED: &str = "auto-backup-failed";
 }

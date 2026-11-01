@@ -12,6 +12,7 @@
 //! Restore is atomic: the file is fully verified and written to a new database first,
 //! and only then swapped in place of the current vault.
 
+pub mod auto;
 pub mod hex;
 
 use std::fs;

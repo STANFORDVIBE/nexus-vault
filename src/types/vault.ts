@@ -123,7 +123,20 @@ export interface Settings {
   lockOnSystemLock: boolean;
   closeBehavior: CloseBehavior;
   launchAtStartup: boolean;
+  autoBackup: boolean;
+  autoBackupIntervalHours: number;
+  autoBackupKeep: number;
+  /** `null` = the default folder inside the app data dir. */
+  autoBackupDir: string | null;
 }
+
+export interface AutoBackupStatus {
+  lastAt: number | null;
+  folder: string;
+  count: number;
+}
+
+export type ExportFormat = "csv" | "json";
 
 export type GeneratorMode = "password" | "passphrase";
 

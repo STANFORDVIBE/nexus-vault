@@ -1,6 +1,7 @@
 //! Application core: vault session state and shared types.
 
 pub mod error;
+pub mod export;
 pub mod folders;
 pub mod items;
 pub mod model;

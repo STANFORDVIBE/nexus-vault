@@ -72,6 +72,7 @@ pub fn run() {
             let handle = app.handle();
             tray::create(handle)?;
             lock::start_auto_lock(handle);
+            lock::start_auto_backup(handle);
             lock::watch_system_lock(handle);
 
             let start_hidden = std::env::args().any(|arg| arg == MINIMIZED_ARG);
@@ -115,6 +116,11 @@ pub fn run() {
             commands::backup::create_backup,
             commands::backup::pick_backup_file,
             commands::backup::restore_backup,
+            commands::backup::get_auto_backup_status,
+            commands::backup::run_auto_backup_now,
+            commands::backup::choose_auto_backup_folder,
+            commands::backup::open_auto_backup_folder,
+            commands::backup::export_vault,
             commands::vaults::list_vaults,
             commands::vaults::switch_vault,
             commands::vaults::add_new_vault,

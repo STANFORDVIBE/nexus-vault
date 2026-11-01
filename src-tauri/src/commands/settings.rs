@@ -20,6 +20,9 @@ pub async fn update_settings(
     settings: Settings,
 ) -> AppResult<Settings> {
     settings.validate()?;
+    if let Some(dir) = settings.auto_backup_dir.as_deref() {
+        crate::backup::auto::validate_folder(dir)?;
+    }
     autostart::set_enabled(&app, settings.launch_at_startup)?;
     let mut inner = state.lock();
     inner.touch();
