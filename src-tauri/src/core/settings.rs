@@ -36,6 +36,8 @@ pub struct Settings {
     pub auto_backup_keep: u32,
     /// Custom folder; `None` = `<data dir>/backups`.
     pub auto_backup_dir: Option<String>,
+    /// Look for a new version on GitHub once a day.
+    pub check_updates: bool,
 }
 
 impl Default for Settings {
@@ -50,6 +52,7 @@ impl Default for Settings {
             auto_backup_interval_hours: 24,
             auto_backup_keep: 10,
             auto_backup_dir: None,
+            check_updates: true,
         }
     }
 }

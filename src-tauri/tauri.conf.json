@@ -34,7 +34,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Nexus Vault",
     "category": "Utility",
     "shortDescription": "Local-first password manager",
@@ -47,7 +49,25 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "languages": [
+          "Russian"
+        ],
+        "displayLanguageSelector": false,
+        "customLanguageFiles": {
+          "Russian": "nsis/Russian.nsh"
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5NzJFNkVBRDhCQTlGQjAKUldTd243clk2dVp5dVN1Vk9oamJRZXdyMG83cnFDWDhZaGFVckpwTXZoVU5uWW13blRHazRERkoK",
+      "endpoints": [
+        "https://github.com/STANFORDVIBE/nexus-vault/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

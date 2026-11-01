@@ -64,6 +64,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = data_dir(app)?;
             let state: commands::SharedState = Arc::new(AppState::new(data_dir));
@@ -74,6 +75,9 @@ pub fn run() {
             lock::start_auto_lock(handle);
             lock::start_auto_backup(handle);
             lock::watch_system_lock(handle);
+            if !is_test_instance() {
+                commands::update::start_auto_check(handle);
+            }
 
             let start_hidden = std::env::args().any(|arg| arg == MINIMIZED_ARG);
             if !start_hidden {
@@ -96,6 +100,8 @@ pub fn run() {
             commands::hello::enable_hello,
             commands::hello::disable_hello,
             commands::hello::unlock_with_hello,
+            commands::update::check_update,
+            commands::update::install_update,
             commands::items::get_dashboard,
             commands::items::get_password_health,
             commands::items::create_item,

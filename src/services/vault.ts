@@ -12,6 +12,7 @@ import type {
   ItemFilter,
   ItemInput,
   HelloStatus,
+  UpdateInfo,
   ItemSummary,
   PasswordHealth,
   AutoBackupStatus,
@@ -65,6 +66,8 @@ export const revealPassword = (id: string) => invoke<string>("reveal_password", 
 export const revealField = (id: string, field: CopyField) =>
   invoke<string>("reveal_field", { id, field });
 /** Full content with secrets, only to fill an edit form. */
+export const checkUpdate = () => invoke<UpdateInfo | null>("check_update");
+export const installUpdate = () => invoke<void>("install_update");
 export const getHelloStatus = () => invoke<HelloStatus>("get_hello_status");
 export const enableHello = (password: string) => invoke<void>("enable_hello", { password });
 export const disableHello = () => invoke<void>("disable_hello");

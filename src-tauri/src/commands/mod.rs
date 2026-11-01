@@ -11,6 +11,7 @@ pub mod generator;
 pub mod hello;
 pub mod items;
 pub mod settings;
+pub mod update;
 pub mod vault;
 pub mod vaults;
 

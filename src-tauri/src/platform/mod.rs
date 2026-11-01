@@ -16,4 +16,5 @@ pub mod events {
     pub const QUICK_SEARCH: &str = "quick-search";
     pub const CLIPBOARD_CLEARED: &str = "clipboard-cleared";
     pub const AUTO_BACKUP_FAILED: &str = "auto-backup-failed";
+    pub const UPDATE_AVAILABLE: &str = "update-available";
 }

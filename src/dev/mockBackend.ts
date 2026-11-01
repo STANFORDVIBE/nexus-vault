@@ -74,6 +74,7 @@ export function createMockBackend(options: MockOptions = {}) {
     autoBackupIntervalHours: 24,
     autoBackupKeep: 10,
     autoBackupDir: null,
+    checkUpdates: true,
   });
   let settings: Settings = defaultSettings();
   let pendingRestore = false;
@@ -418,6 +419,8 @@ export function createMockBackend(options: MockOptions = {}) {
       requireUnlocked();
       return detail(getItem(id as string));
     },
+    check_update: () => null,
+    install_update: () => undefined,
     get_hello_status: () => ({ available: true, enabled: helloVaults.has(activeId) }),
     enable_hello: ({ password: pw }) => {
       requireUnlocked();

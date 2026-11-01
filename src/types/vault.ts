@@ -194,6 +194,12 @@ export interface FolderView {
   createdAt: number;
 }
 
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes: string | null;
+}
+
 export interface HelloStatus {
   /** Windows Hello is set up on this PC. */
   available: boolean;
@@ -238,6 +244,7 @@ export interface Settings {
   autoBackupKeep: number;
   /** `null` = the default folder inside the app data dir. */
   autoBackupDir: string | null;
+  checkUpdates: boolean;
 }
 
 export interface AutoBackupStatus {

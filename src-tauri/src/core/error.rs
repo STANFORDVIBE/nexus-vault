@@ -32,6 +32,9 @@ pub enum AppError {
     /// The Hello key is gone or no longer matches (e.g. Hello was reset): use the password.
     #[error("windows hello failed")]
     HelloFailed,
+    /// No connection to the update server, or the downloaded update did not verify.
+    #[error("update failed")]
+    UpdateFailed,
     #[error("database error")]
     Database(#[source] rusqlite::Error),
     #[error("io error")]
@@ -55,6 +58,7 @@ impl AppError {
             AppError::Cancelled => "cancelled",
             AppError::HelloUnavailable => "hello_unavailable",
             AppError::HelloFailed => "hello_failed",
+            AppError::UpdateFailed => "update_failed",
             AppError::Database(_) => "database",
             AppError::Io(_) => "io",
             AppError::Internal => "internal",

@@ -4,10 +4,12 @@ import { toast } from "sonner";
 import { CorruptedScreen } from "@/features/auth/CorruptedScreen";
 import { OnboardingScreen } from "@/features/auth/OnboardingScreen";
 import { UnlockScreen } from "@/features/auth/UnlockScreen";
+import { runUpdate } from "@/features/settings/runUpdate";
 import { plural } from "@/lib/format";
 import { errorMessage } from "@/services/errors";
 import { useSessionStore } from "@/store/session";
 import { useSettingsStore } from "@/store/settings";
+import type { UpdateInfo } from "@/types/vault";
 
 /** Subscribes to backend events for the whole app lifetime. */
 function useBackendEvents() {
@@ -17,6 +19,13 @@ function useBackendEvents() {
     const unlisteners = [
       listen("vault-locked", () => markLocked()),
       listen("clipboard-cleared", () => toast("Буфер обмена очищен")),
+      listen<UpdateInfo>("update-available", ({ payload }) =>
+        toast(`Вышла версия ${payload.version}`, {
+          description: "Обновление займёт меньше минуты, хранилище заблокируется",
+          duration: 30_000,
+          action: { label: "Обновить", onClick: () => void runUpdate() },
+        }),
+      ),
       listen("auto-backup-failed", () =>
         toast.error("Не удалось сделать автоматическую копию", {
           description: "Проверьте папку для автокопий в настройках",

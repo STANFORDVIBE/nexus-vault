@@ -31,6 +31,7 @@ import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ChangeMasterPassword } from "@/features/settings/ChangeMasterPassword";
 import { HelloSettings } from "@/features/settings/HelloSettings";
 import { SettingsRow } from "@/features/settings/SettingsRow";
+import { UpdateSettings } from "@/features/settings/UpdateSettings";
 import { VaultsSettings } from "@/features/vaults/VaultsSettings";
 import { useAppInfo } from "@/hooks/useAppInfo";
 import { errorMessage } from "@/services/errors";
@@ -304,9 +305,10 @@ export function SettingsPage() {
             </span>
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Локальный менеджер паролей и защищённых заметок. Работает без интернета и без аккаунтов:
-            данные хранятся только на этом компьютере. Ключ выводится из мастер-пароля алгоритмом
-            Argon2id (256 МиБ памяти), каждая запись шифруется XChaCha20-Poly1305.
+            Локальный менеджер паролей и защищённых заметок. Работает без аккаунтов и облака: данные
+            хранятся только на этом компьютере, в сеть ходит лишь проверка обновлений. Ключ
+            выводится из мастер-пароля алгоритмом Argon2id (256 МиБ памяти), каждая запись шифруется
+            XChaCha20-Poly1305.
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Открытые компоненты: Tauri, React, Radix UI, shadcn/ui, Tailwind CSS, Lucide, RustCrypto
@@ -314,6 +316,7 @@ export function SettingsPage() {
             Inter. Лицензии MIT, Apache-2.0, ISC, OFL и CC0.
           </p>
         </div>
+        <UpdateSettings settings={settings} save={save} />
       </Section>
     </div>
   );
