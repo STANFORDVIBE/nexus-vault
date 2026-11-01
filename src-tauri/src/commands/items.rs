@@ -3,6 +3,7 @@ use tauri::{AppHandle, State};
 
 use crate::commands::{SharedState, with_unlocked};
 use crate::core::error::{AppError, AppResult};
+use crate::core::health::PasswordHealth;
 use crate::core::items::{CopyField, DashboardData, ItemDetail, ItemFilter, ItemSummary};
 use crate::core::model::ItemPayload;
 use crate::platform::clipboard;
@@ -196,4 +197,14 @@ mod tests {
         assert!(!is_web_url("ms-settings:"));
         assert!(!is_web_url("https://example.com/\nfoo"));
     }
+}
+
+#[tauri::command]
+pub async fn get_password_health(state: State<'_, SharedState>) -> AppResult<PasswordHealth> {
+    with_unlocked(&state, |_, vault| {
+        Ok(crate::core::health::check(
+            vault,
+            crate::core::time::now_millis(),
+        ))
+    })
 }

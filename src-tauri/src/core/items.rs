@@ -246,7 +246,7 @@ fn first_line_preview(markdown: &str) -> Option<String> {
     Some(preview)
 }
 
-fn summary(item: &VaultItem) -> ItemSummary {
+pub(crate) fn summary(item: &VaultItem) -> ItemSummary {
     let (subtitle, website) = match &item.payload {
         ItemPayload::Login(p) => (
             p.username

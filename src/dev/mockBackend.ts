@@ -416,6 +416,44 @@ export function createMockBackend(options: MockOptions = {}) {
       requireUnlocked();
       return detail(getItem(id as string));
     },
+    get_password_health: () => {
+      requireUnlocked();
+      const logins = [...items.values()].filter(
+        (i) => i.deletedAt === null && i.content.type === "login" && i.content.payload.password,
+      );
+      const pw = (i: MockItem) => (i.content.payload as { password?: string | null }).password!;
+      const bad = new Set<string>();
+      const weak = logins
+        .filter((i) => pw(i).length < 10)
+        .map((i) => (bad.add(i.id), { item: summary(i), level: pw(i).length < 6 ? 0 : 1 }));
+      const groups = new Map<string, MockItem[]>();
+      for (const i of logins) groups.set(pw(i), [...(groups.get(pw(i)) ?? []), i]);
+      const reused = [...groups.values()]
+        .filter((g) => g.length > 1)
+        .map((g) => g.map((i) => (bad.add(i.id), summary(i))));
+      const day = 86_400_000;
+      const old = logins
+        .map((i) => ({ i, changedAt: i.passwordChangedAt ?? i.createdAt }))
+        .filter(({ changedAt }) => now() - changedAt >= 365 * day)
+        .map(
+          ({ i, changedAt }) => (
+            bad.add(i.id),
+            {
+              item: summary(i),
+              changedAt,
+              ageDays: Math.floor((now() - changedAt) / day),
+            }
+          ),
+        );
+      return {
+        checked: logins.length,
+        healthy: logins.length - bad.size,
+        weak,
+        reused,
+        old,
+        oldAfterDays: 365,
+      };
+    },
     get_dashboard: () => {
       requireUnlocked();
       const active = [...items.values()].filter((i) => i.deletedAt === null);

@@ -7,6 +7,7 @@ import {
   LayoutDashboardIcon,
   DicesIcon,
   SettingsIcon,
+  ShieldCheckIcon,
   StarIcon,
   StickyNoteIcon,
   Trash2Icon,
@@ -30,6 +31,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/dashboard", label: "Обзор", icon: LayoutDashboardIcon },
       { to: "/items", label: "Все записи", icon: LayersIcon },
+      { to: "/health", label: "Проверка паролей", icon: ShieldCheckIcon },
     ],
   },
   {

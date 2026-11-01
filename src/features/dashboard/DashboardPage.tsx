@@ -8,6 +8,7 @@ import {
   KeyRoundIcon,
   LayersIcon,
   PlusIcon,
+  ShieldAlertIcon,
   StarIcon,
   StickyNoteIcon,
   Trash2Icon,
@@ -19,8 +20,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useVaultQuery } from "@/hooks/useVaultQuery";
-import { formatRelative } from "@/lib/format";
-import { getDashboard } from "@/services/vault";
+import { formatRelative, plural } from "@/lib/format";
+import { getDashboard, getPasswordHealth } from "@/services/vault";
 import type { ItemSummary } from "@/types/vault";
 
 function Stat({
@@ -78,6 +79,8 @@ function ItemLinks({ items, view }: { items: ItemSummary[]; view: string }) {
 export function DashboardPage() {
   const navigate = useNavigate();
   const { data } = useVaultQuery("dashboard", getDashboard);
+  const { data: health } = useVaultQuery("health", getPasswordHealth);
+  const toFix = health ? health.checked - health.healthy : 0;
 
   const actions = (
     <>
@@ -112,6 +115,20 @@ export function DashboardPage() {
         <Stat to="/documents" icon={IdCardIcon} label="Документы" value={data?.identities} />
         <Stat to="/favorites" icon={StarIcon} label="Избранное" value={data?.favorites} />
       </div>
+
+      {toFix > 0 && (
+        <Link
+          to="/health"
+          className="flex items-center gap-3 rounded-lg border border-brand/30 bg-brand/10 px-4 py-3 text-sm transition-colors outline-none hover:bg-brand/15 focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <ShieldAlertIcon className="size-5 shrink-0 text-brand" strokeWidth={1.75} />
+          <span className="flex-1">
+            {toFix} {plural(toFix, ["пароль стоит", "пароля стоит", "паролей стоит"])} поменять:
+            слабые, повторяются или давно не менялись
+          </span>
+          <span className="shrink-0 font-medium text-brand">Проверить</span>
+        </Link>
+      )}
 
       {data && data.total === 0 ? (
         <Card>

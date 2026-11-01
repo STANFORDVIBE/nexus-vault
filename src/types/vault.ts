@@ -194,6 +194,18 @@ export interface FolderView {
   createdAt: number;
 }
 
+export interface PasswordHealth {
+  /** Logins with a password. */
+  checked: number;
+  /** Logins with no problem at all. */
+  healthy: number;
+  weak: { item: ItemSummary; level: number }[];
+  /** Each group shares one password. */
+  reused: ItemSummary[][];
+  old: { item: ItemSummary; changedAt: number; ageDays: number }[];
+  oldAfterDays: number;
+}
+
 export interface DashboardData {
   total: number;
   logins: number;

@@ -93,6 +93,7 @@ pub fn run() {
             commands::items::list_items,
             commands::items::get_item,
             commands::items::get_dashboard,
+            commands::items::get_password_health,
             commands::items::create_item,
             commands::items::update_item,
             commands::items::set_favorite,

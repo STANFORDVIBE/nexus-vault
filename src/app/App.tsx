@@ -6,6 +6,7 @@ import { VaultGate } from "@/features/auth/VaultGate";
 import { DashboardPage } from "@/features/dashboard/DashboardPage";
 import { FoldersPage } from "@/features/folders/FoldersPage";
 import { GeneratorPage } from "@/features/generator/GeneratorPage";
+import { HealthPage } from "@/features/health/HealthPage";
 import { ItemsPage } from "@/features/items/ItemsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 
@@ -34,6 +35,7 @@ export function App() {
               <Route path="folders" element={<FoldersPage />} />
               <Route path="folders/:folderId" element={<FolderItems />} />
               <Route path="generator" element={<GeneratorPage />} />
+              <Route path="health" element={<HealthPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>

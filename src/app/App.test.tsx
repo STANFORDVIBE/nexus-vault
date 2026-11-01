@@ -215,4 +215,22 @@ describe("Nexus Vault app", () => {
     await user.click(copies[copies.length - 1]!);
     expect(backend.clipboard.value).toBe("капибара");
   });
+
+  it("password check lists a weak and a reused password", async () => {
+    window.history.pushState({}, "", "/passwords");
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+    for (const title of ["Форум", "Форум 2"]) {
+      await user.click(await screen.findByRole("button", { name: "Добавить" }));
+      await user.type(await screen.findByLabelText("Название"), title);
+      await user.type(screen.getByLabelText("Пароль"), "qwerty");
+      await user.click(screen.getByRole("button", { name: "Сохранить" }));
+      const list = await screen.findByRole("listbox", { name: "Записи" });
+      await within(list).findByText(title);
+    }
+    await user.click(screen.getByRole("link", { name: "Проверка паролей" }));
+    expect(await screen.findByText(/стоит поменять 2/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Форум 2/ })).toHaveLength(2);
+    expect(screen.queryByText("qwerty")).toBeNull();
+  });
 });
