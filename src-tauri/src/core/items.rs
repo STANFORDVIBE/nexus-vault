@@ -800,4 +800,62 @@ mod tests {
             }
         }
     }
+
+    /// Unlock, list and search timings for a 10 000-item vault (spec target: search < 100 ms).
+    /// Run with: cargo test --release -- --ignored large_vault_benchmark --nocapture
+    #[test]
+    #[ignore]
+    #[allow(clippy::print_stdout)]
+    fn large_vault_benchmark() {
+        use std::time::Instant;
+
+        let (mut db, mut vault) = setup();
+        let start = Instant::now();
+        for i in 0..10_000 {
+            let payload = if i % 4 == 0 {
+                note(
+                    &format!("Note {i}"),
+                    &format!(
+                        "recovery codes for service {i}
+- one
+- two"
+                    ),
+                )
+            } else {
+                login(
+                    &format!("Site {i}"),
+                    &format!("user{i}@example.com"),
+                    "p@ssw0rd",
+                )
+            };
+            vault
+                .create_item(&mut db, payload, None, i % 10 == 0)
+                .unwrap();
+        }
+        println!("create 10k items: {:?}", start.elapsed());
+
+        let start = Instant::now();
+        let vault = vault::unlock(&db, PASSWORD).unwrap();
+        println!("unlock + decrypt 10k (test KDF): {:?}", start.elapsed());
+        assert_eq!(vault.items.len(), 10_000);
+
+        let start = Instant::now();
+        let listed = vault.list_items(&all());
+        println!("list all (sorted): {:?}", start.elapsed());
+        assert_eq!(listed.len(), 10_000);
+
+        for query in ["user42", "site 99", "recovery 1234", "nothing-matches-this"] {
+            let filter = ItemFilter {
+                query: Some(query.into()),
+                ..all()
+            };
+            let start = Instant::now();
+            let found = vault.list_items(&filter);
+            println!(
+                "search {query:?}: {} hits in {:?}",
+                found.len(),
+                start.elapsed()
+            );
+        }
+    }
 }

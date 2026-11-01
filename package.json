@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
-    "check": "npm run typecheck && npm run lint && npm run test && npm run lint:rust && npm run test:rust"
+    "check": "npm run typecheck && npm run lint && npm run test && npm run lint:rust && npm run test:rust",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.12.4",
     "@testing-library/jest-dom": "^7.0.1",
@@ -52,7 +54,6 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "jsdom": "^30.1.3",
-    "playwright-core": "^1.64.1",
     "prettier": "^3.9.10",
     "shadcn": "^4.23.0",
     "tailwindcss": "^4.3.3",
