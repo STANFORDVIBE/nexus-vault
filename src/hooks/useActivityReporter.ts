@@ -20,7 +20,9 @@ export function useActivityReporter() {
         // locked in the meantime: the vault-locked event handles the UI
       });
     }
-    const events = ["pointerdown", "keydown", "wheel", "pointermove"] as const;
+    // deliberate input only: a cursor merely passing over the window must not keep
+    // the vault unlocked
+    const events = ["pointerdown", "keydown", "wheel"] as const;
     for (const event of events) window.addEventListener(event, onActivity, { passive: true });
     return () => {
       for (const event of events) window.removeEventListener(event, onActivity);

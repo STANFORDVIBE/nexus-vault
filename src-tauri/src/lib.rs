@@ -17,6 +17,16 @@ use crate::platform::{lock, tray, window};
 
 const VAULT_FILE: &str = "vault.db";
 
+/// Where the vault lives. Debug builds honour `NEXUS_VAULT_DATA_DIR` so manual and
+/// automated testing never touch the real vault; release builds ignore it.
+fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os("NEXUS_VAULT_DATA_DIR") {
+        return Ok(dir.into());
+    }
+    app.path().app_data_dir()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let quick_search = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyL);
@@ -45,7 +55,7 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let data_dir = app.path().app_data_dir()?;
+            let data_dir = data_dir(app)?;
             let state: commands::SharedState = Arc::new(AppState::new(data_dir.join(VAULT_FILE)));
             app.manage(state);
 
