@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FolderOpenIcon, HistoryIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -11,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { SettingsRow } from "@/features/settings/SettingsRow";
 import { formatRelative } from "@/lib/format";
 import { errorMessage } from "@/services/errors";
 import {
@@ -32,32 +32,6 @@ const KEEP = [
   { value: 10, label: "10 последних" },
   { value: 30, label: "30 последних" },
 ];
-
-function Row({
-  label,
-  description,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  description?: ReactNode;
-  htmlFor?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-4">
-      <div className="flex min-w-0 flex-1 basis-60 flex-col gap-0.5">
-        <Label htmlFor={htmlFor} className="text-sm">
-          {label}
-        </Label>
-        {description && (
-          <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
 
 function ChoiceSelect({
   id,
@@ -136,7 +110,7 @@ export function AutoBackupSettings({ settings, save }: AutoBackupSettingsProps) 
 
   return (
     <>
-      <Row
+      <SettingsRow
         label="Автоматические копии"
         description={
           status?.lastAt
@@ -150,8 +124,8 @@ export function AutoBackupSettings({ settings, save }: AutoBackupSettingsProps) 
           checked={settings.autoBackup}
           onCheckedChange={(autoBackup) => void save({ autoBackup })}
         />
-      </Row>
-      <Row label="Как часто" htmlFor="auto-backup-interval">
+      </SettingsRow>
+      <SettingsRow label="Как часто" htmlFor="auto-backup-interval">
         <ChoiceSelect
           id="auto-backup-interval"
           value={settings.autoBackupIntervalHours}
@@ -159,8 +133,8 @@ export function AutoBackupSettings({ settings, save }: AutoBackupSettingsProps) 
           onChange={(autoBackupIntervalHours) => void save({ autoBackupIntervalHours })}
           disabled={off}
         />
-      </Row>
-      <Row
+      </SettingsRow>
+      <SettingsRow
         label="Сколько хранить"
         description="Более старые автокопии удаляются. Копии, сделанные вручную, не трогаются"
         htmlFor="auto-backup-keep"
@@ -172,7 +146,7 @@ export function AutoBackupSettings({ settings, save }: AutoBackupSettingsProps) 
           onChange={(autoBackupKeep) => void save({ autoBackupKeep })}
           disabled={off}
         />
-      </Row>
+      </SettingsRow>
       <div className="flex flex-col gap-3 px-6 py-4">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-sm font-medium">Папка для автокопий</span>

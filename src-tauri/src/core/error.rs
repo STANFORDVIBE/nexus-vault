@@ -26,6 +26,12 @@ pub enum AppError {
     InvalidBackup,
     #[error("operation cancelled")]
     Cancelled,
+    /// Windows Hello is not set up on this PC, or not turned on for this vault.
+    #[error("windows hello unavailable")]
+    HelloUnavailable,
+    /// The Hello key is gone or no longer matches (e.g. Hello was reset): use the password.
+    #[error("windows hello failed")]
+    HelloFailed,
     #[error("database error")]
     Database(#[source] rusqlite::Error),
     #[error("io error")]
@@ -47,6 +53,8 @@ impl AppError {
             AppError::UnsupportedVersion => "unsupported_version",
             AppError::InvalidBackup => "invalid_backup",
             AppError::Cancelled => "cancelled",
+            AppError::HelloUnavailable => "hello_unavailable",
+            AppError::HelloFailed => "hello_failed",
             AppError::Database(_) => "database",
             AppError::Io(_) => "io",
             AppError::Internal => "internal",

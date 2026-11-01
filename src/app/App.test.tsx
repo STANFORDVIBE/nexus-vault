@@ -233,4 +233,18 @@ describe("Nexus Vault app", () => {
     expect(screen.getAllByRole("link", { name: /Форум 2/ })).toHaveLength(2);
     expect(screen.queryByText("qwerty")).toBeNull();
   });
+
+  it("windows hello: turned on with the master password, then unlocks", async () => {
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+    await user.click(screen.getByRole("link", { name: "Настройки" }));
+    await user.click(await screen.findByRole("switch", { name: "Вход через Windows Hello" }));
+    await user.type(await screen.findByLabelText("Мастер-пароль"), PASSWORD);
+    await user.click(screen.getByRole("button", { name: "Включить" }));
+    expect(await screen.findByText("Windows Hello включён")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Заблокировать/ }));
+    await user.click(await screen.findByRole("button", { name: "Windows Hello" }));
+    await screen.findByRole("navigation", { name: "Основная навигация" });
+  });
 });

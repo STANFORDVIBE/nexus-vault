@@ -11,6 +11,7 @@ import type {
   ItemContent,
   ItemFilter,
   ItemInput,
+  HelloStatus,
   ItemSummary,
   PasswordHealth,
   AutoBackupStatus,
@@ -64,6 +65,10 @@ export const revealPassword = (id: string) => invoke<string>("reveal_password", 
 export const revealField = (id: string, field: CopyField) =>
   invoke<string>("reveal_field", { id, field });
 /** Full content with secrets, only to fill an edit form. */
+export const getHelloStatus = () => invoke<HelloStatus>("get_hello_status");
+export const enableHello = (password: string) => invoke<void>("enable_hello", { password });
+export const disableHello = () => invoke<void>("disable_hello");
+export const unlockWithHello = () => invoke<VaultStatus>("unlock_with_hello");
 export const getPasswordHealth = () => invoke<PasswordHealth>("get_password_health");
 export const getItemForEdit = (id: string) => invoke<ItemContent>("get_item_for_edit", { id });
 /** Copies in Rust; resolves to the auto-clear timeout in seconds (0 = not cleared). */

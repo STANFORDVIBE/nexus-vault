@@ -231,6 +231,10 @@ impl Inner {
         settings.save(db)?;
         self.vault = Some(unlocked);
         self.touch();
+        // persist the registry now: until it is saved, the default vault gets a new id on
+        // every start, and automatic backups are named after that id
+        self.registry.mark_opened();
+        let _ = self.registry.save();
         Ok(self.status())
     }
 
@@ -243,12 +247,41 @@ impl Inner {
             return Err(AppError::Integrity);
         }
         let unlocked = vault::unlock(db, password)?;
-        self.settings = Settings::load(db);
+        self.finish_unlock(unlocked)
+    }
+
+    /// Unlock with a Windows Hello signature of the challenge read for `vault_id`.
+    pub fn unlock_with_hello(
+        &mut self,
+        vault_id: &str,
+        signature: &[u8],
+    ) -> AppResult<VaultStatus> {
+        if self.vault.is_some() {
+            return Ok(self.status());
+        }
+        let db = self.database()?;
+        if !db.integrity_check()? {
+            return Err(AppError::Integrity);
+        }
+        // the user may have switched to another vault while the prompt was open
+        if vault::hello_challenge(db)?.0 != vault_id {
+            return Err(AppError::HelloFailed);
+        }
+        let unlocked = vault::unlock_with_hello(db, signature)?;
+        self.finish_unlock(unlocked)
+    }
+
+    fn finish_unlock(&mut self, unlocked: UnlockedVault) -> AppResult<VaultStatus> {
+        self.settings = Settings::load(self.database()?);
         self.vault = Some(unlocked);
         self.touch();
         self.registry.mark_opened();
         let _ = self.registry.save();
         Ok(self.status())
+    }
+
+    pub fn is_unlocked(&self) -> bool {
+        self.vault.is_some()
     }
 
     /// Drops the unlocked vault, wiping keys and decrypted data. Returns whether
@@ -317,6 +350,21 @@ mod tests {
         // A fresh process sees a locked vault
         let reopened = AppState::for_tests(path);
         assert_eq!(reopened.lock().status().state, VaultState::Locked);
+    }
+
+    #[test]
+    fn vault_id_is_stable_after_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let state = AppState::for_tests(path.clone());
+        let id = {
+            let mut inner = state.lock();
+            inner.create_vault("correct horse battery").unwrap();
+            inner.status().vault.id
+        };
+        // restarting before the first unlock must keep the id (auto backups use it)
+        let reopened = AppState::for_tests(path);
+        assert_eq!(reopened.lock().status().vault.id, id);
     }
 
     #[test]

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { LockKeyholeOpenIcon } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { FingerprintIcon, LockKeyholeOpenIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -8,7 +8,7 @@ import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ForgotPasswordDialog } from "@/features/vaults/ForgotPasswordDialog";
 import { VaultSwitcher } from "@/features/vaults/VaultSwitcher";
 import { errorMessage, hasCode } from "@/services/errors";
-import { unlockVault } from "@/services/vault";
+import { getHelloStatus, unlockVault, unlockWithHello } from "@/services/vault";
 import { useSessionStore } from "@/store/session";
 
 export function UnlockScreen() {
@@ -18,6 +18,31 @@ export function UnlockScreen() {
   const setStatus = useSessionStore((s) => s.setStatus);
   const refresh = useSessionStore((s) => s.refresh);
   const vaultName = useSessionStore((s) => s.status?.vault.name);
+  const vaultId = useSessionStore((s) => s.status?.vault.id);
+  const [hello, setHello] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getHelloStatus()
+      .then((s) => !cancelled && setHello(s.available && s.enabled))
+      .catch(() => !cancelled && setHello(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultId]);
+
+  async function helloUnlock() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(await unlockWithHello());
+    } catch (e) {
+      if (!hasCode(e, "cancelled")) setError(errorMessage(e));
+      setBusy(false);
+      if (hasCode(e, "integrity")) void refresh();
+    }
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -83,6 +108,18 @@ export function UnlockScreen() {
           <LockKeyholeOpenIcon />
           {busy ? "Расшифровываем…" : "Разблокировать"}
         </Button>
+        {hello && (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            disabled={busy}
+            onClick={() => void helloUnlock()}
+          >
+            <FingerprintIcon />
+            Windows Hello
+          </Button>
+        )}
       </form>
     </AuthLayout>
   );

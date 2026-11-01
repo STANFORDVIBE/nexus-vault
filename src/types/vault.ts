@@ -194,6 +194,13 @@ export interface FolderView {
   createdAt: number;
 }
 
+export interface HelloStatus {
+  /** Windows Hello is set up on this PC. */
+  available: boolean;
+  /** The active vault can be unlocked with Hello. */
+  enabled: boolean;
+}
+
 export interface PasswordHealth {
   /** Logins with a password. */
   checked: number;

@@ -151,6 +151,8 @@ export function createMockBackend(options: MockOptions = {}) {
     Object.assign(activeSlot(), { state, password, items, folders, settings });
   }
 
+  const helloVaults = new Set<string>();
+
   function activate(id: string) {
     storeActive();
     const slot = slots.find((s) => s.id === id) ?? fail("not_found");
@@ -415,6 +417,21 @@ export function createMockBackend(options: MockOptions = {}) {
     get_item: ({ id }) => {
       requireUnlocked();
       return detail(getItem(id as string));
+    },
+    get_hello_status: () => ({ available: true, enabled: helloVaults.has(activeId) }),
+    enable_hello: ({ password: pw }) => {
+      requireUnlocked();
+      if (pw !== password) fail("invalid_password");
+      helloVaults.add(activeId);
+    },
+    disable_hello: () => {
+      requireUnlocked();
+      helloVaults.delete(activeId);
+    },
+    unlock_with_hello: () => {
+      if (!helloVaults.has(activeId)) fail("hello_unavailable");
+      state = "unlocked";
+      return status();
     },
     get_password_health: () => {
       requireUnlocked();

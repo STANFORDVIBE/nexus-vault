@@ -65,6 +65,9 @@ const MESSAGES: Record<string, string> = {
   unsupported_version: "Файл создан более новой версией Nexus Vault",
   invalid_backup: "Файл повреждён или не является резервной копией Nexus Vault",
   cancelled: "Операция отменена",
+  hello_unavailable: "Windows Hello недоступен — войдите мастер-паролем",
+  hello_failed:
+    "Ключ Windows Hello больше не подходит — войдите мастер-паролем и включите Hello заново в настройках",
   database: "Ошибка базы данных",
   io: "Ошибка чтения или записи файла",
   internal: "Внутренняя ошибка",

@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Select,
@@ -30,6 +29,8 @@ import { AutoBackupSettings } from "@/features/backup/AutoBackupSettings";
 import { ExportVault } from "@/features/backup/ExportVault";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ChangeMasterPassword } from "@/features/settings/ChangeMasterPassword";
+import { HelloSettings } from "@/features/settings/HelloSettings";
+import { SettingsRow } from "@/features/settings/SettingsRow";
 import { VaultsSettings } from "@/features/vaults/VaultsSettings";
 import { useAppInfo } from "@/hooks/useAppInfo";
 import { errorMessage } from "@/services/errors";
@@ -90,32 +91,6 @@ function Section({
       <Separator />
       <CardContent className="divide-y divide-border px-0">{children}</CardContent>
     </Card>
-  );
-}
-
-function Row({
-  label,
-  description,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  description?: ReactNode;
-  htmlFor?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-4">
-      <div className="flex min-w-0 flex-1 basis-60 flex-col gap-0.5">
-        <Label htmlFor={htmlFor} className="text-sm">
-          {label}
-        </Label>
-        {description && (
-          <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
-        )}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
   );
 }
 
@@ -206,7 +181,7 @@ export function SettingsPage() {
       {settings && (
         <>
           <Section id="general" icon={SettingsIcon} title="Общие">
-            <Row
+            <SettingsRow
               label="При закрытии окна"
               description="Что делать по крестику. Из трея приложение открывается щелчком по значку"
               htmlFor="close-behavior"
@@ -226,8 +201,8 @@ export function SettingsPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </Row>
-            <Row
+            </SettingsRow>
+            <SettingsRow
               label="Запускать вместе с Windows"
               description="Приложение стартует свёрнутым в трей и заблокированным"
               htmlFor="autostart"
@@ -237,11 +212,11 @@ export function SettingsPage() {
                 checked={settings.launchAtStartup}
                 onCheckedChange={(launchAtStartup) => void save({ launchAtStartup })}
               />
-            </Row>
+            </SettingsRow>
           </Section>
 
           <Section id="security" icon={ShieldIcon} title="Безопасность">
-            <Row
+            <SettingsRow
               label="Автоблокировка"
               description="Через сколько бездействия хранилище заблокируется"
               htmlFor="auto-lock"
@@ -252,8 +227,8 @@ export function SettingsPage() {
                 options={AUTO_LOCK}
                 onChange={(autoLockMinutes) => void save({ autoLockMinutes })}
               />
-            </Row>
-            <Row
+            </SettingsRow>
+            <SettingsRow
               label="Блокировать вместе с Windows"
               description="При Win+L, выходе из сеанса или блокировке экрана"
               htmlFor="lock-system"
@@ -263,8 +238,8 @@ export function SettingsPage() {
                 checked={settings.lockOnSystemLock}
                 onCheckedChange={(lockOnSystemLock) => void save({ lockOnSystemLock })}
               />
-            </Row>
-            <Row
+            </SettingsRow>
+            <SettingsRow
               label="Очищать буфер обмена"
               description="Скопированный пароль удаляется из буфера через это время. Он не попадает в журнал буфера Windows (Win+V) и облачную синхронизацию"
               htmlFor="clipboard"
@@ -275,48 +250,49 @@ export function SettingsPage() {
                 options={CLIPBOARD}
                 onChange={(clipboardClearSeconds) => void save({ clipboardClearSeconds })}
               />
-            </Row>
-            <Row
+            </SettingsRow>
+            <SettingsRow
               label="Мастер-пароль"
               description="Забытый мастер-пароль восстановить нельзя — храните его надёжно"
             >
               <ChangeMasterPassword />
-            </Row>
+            </SettingsRow>
+            <HelloSettings />
           </Section>
         </>
       )}
 
       <Section id="appearance" icon={PaletteIcon} title="Внешний вид">
-        <Row label="Тема">
+        <SettingsRow label="Тема">
           <SegmentedControl
             aria-label="Тема"
             value={theme}
             options={THEMES}
             onValueChange={(value: ThemePreference) => setTheme(value)}
           />
-        </Row>
+        </SettingsRow>
       </Section>
 
       <Section id="backup" icon={ArchiveIcon} title="Резервные копии">
         {settings && <AutoBackupSettings settings={settings} save={save} />}
-        <Row
+        <SettingsRow
           label="Копия в выбранное место"
           description="Файл .nexus зашифрован текущим мастер-паролем. Храните копию на флешке или в облаке — без пароля её не открыть"
         >
           <BackupButton />
-        </Row>
-        <Row
+        </SettingsRow>
+        <SettingsRow
           label="Восстановить из копии"
           description="Текущее хранилище будет заменено. Предыдущая версия сохранится рядом"
         >
           <RestoreBackup />
-        </Row>
-        <Row
+        </SettingsRow>
+        <SettingsRow
           label="Экспорт"
           description="Незашифрованный файл CSV или JSON — чтобы перенести данные в другой менеджер паролей"
         >
           <ExportVault />
-        </Row>
+        </SettingsRow>
       </Section>
 
       <Section id="about" icon={InfoIcon} title="О программе">

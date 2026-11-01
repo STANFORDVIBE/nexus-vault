@@ -8,6 +8,7 @@ pub mod app;
 pub mod backup;
 pub mod folders;
 pub mod generator;
+pub mod hello;
 pub mod items;
 pub mod settings;
 pub mod vault;

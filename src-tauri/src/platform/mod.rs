@@ -2,6 +2,8 @@
 
 pub mod autostart;
 pub mod clipboard;
+#[cfg(windows)]
+pub mod hello;
 pub mod lock;
 #[cfg(windows)]
 mod session;

@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::core::error::{AppError, AppResult};
@@ -163,6 +164,92 @@ fn unwrap_vault_key(
     .map_err(|_| AppError::InvalidPassword)?;
     let bytes: [u8; KEY_LEN] = raw.as_slice().try_into().map_err(|_| AppError::Integrity)?;
     Ok(SecretKey::from_bytes(bytes))
+}
+
+// ---- Windows Hello --------------------------------------------------------------------
+//
+// Hello keys are RSA keys kept by Windows (TPM-backed where available) and never
+// leave it. Signing a fixed random challenge gives the same signature every time
+// (PKCS#1 v1.5 is deterministic), so its hash serves as a wrapping key for the Vault
+// Key. The challenge is stored in front of the ciphertext in the `hello` envelope.
+
+pub const HELLO_CHALLENGE_LEN: usize = 32;
+
+fn hello_aad(vault_id: &str) -> Vec<u8> {
+    format!("nexus-vault/v1/envelope/{vault_id}/hello").into_bytes()
+}
+
+fn hello_kek(signature: &[u8]) -> SecretKey {
+    let mut hasher = Sha256::new();
+    hasher.update(b"nexus-vault/v1/hello-kek");
+    hasher.update(signature);
+    SecretKey::from_bytes(hasher.finalize().into())
+}
+
+pub fn new_hello_challenge() -> AppResult<[u8; HELLO_CHALLENGE_LEN]> {
+    random::bytes()
+}
+
+pub fn hello_enabled(db: &Database) -> AppResult<bool> {
+    Ok(repo::load_envelope_as(db.conn(), repo::HELLO_ENVELOPE)?.is_some())
+}
+
+/// Vault id and the challenge to sign, or `HelloUnavailable` when Hello is off.
+pub fn hello_challenge(db: &Database) -> AppResult<(String, Vec<u8>)> {
+    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
+    let envelope = repo::load_envelope_as(db.conn(), repo::HELLO_ENVELOPE)?
+        .ok_or(AppError::HelloUnavailable)?;
+    if envelope.wrapped_key.len() <= HELLO_CHALLENGE_LEN {
+        return Err(AppError::Integrity);
+    }
+    Ok((
+        meta.vault_id,
+        envelope.wrapped_key[..HELLO_CHALLENGE_LEN].to_vec(),
+    ))
+}
+
+pub fn enable_hello(
+    db: &mut Database,
+    vault: &UnlockedVault,
+    challenge: &[u8; HELLO_CHALLENGE_LEN],
+    signature: &[u8],
+) -> AppResult<()> {
+    let kek = hello_kek(signature);
+    let sealed = aead::seal(&kek, vault.key.expose(), &hello_aad(&vault.vault_id))?;
+    let mut wrapped_key = challenge.to_vec();
+    wrapped_key.extend_from_slice(&sealed.ciphertext);
+    let envelope = EnvelopeRow {
+        wrapped_key,
+        nonce: sealed.nonce.to_vec(),
+        crypto_version: CRYPTO_VERSION,
+    };
+    repo::upsert_envelope_as(db.conn(), repo::HELLO_ENVELOPE, &envelope, now_millis())
+}
+
+pub fn disable_hello(db: &mut Database) -> AppResult<()> {
+    repo::delete_envelope(db.conn(), repo::HELLO_ENVELOPE)
+}
+
+/// Unwraps the Vault Key with a Hello signature of the stored challenge.
+pub fn unlock_with_hello(db: &Database, signature: &[u8]) -> AppResult<UnlockedVault> {
+    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
+    let envelope = repo::load_envelope_as(db.conn(), repo::HELLO_ENVELOPE)?
+        .ok_or(AppError::HelloUnavailable)?;
+    if envelope.crypto_version > CRYPTO_VERSION {
+        return Err(AppError::UnsupportedVersion);
+    }
+    if envelope.wrapped_key.len() <= HELLO_CHALLENGE_LEN {
+        return Err(AppError::Integrity);
+    }
+    let raw = aead::open(
+        &hello_kek(signature),
+        &envelope.nonce,
+        &envelope.wrapped_key[HELLO_CHALLENGE_LEN..],
+        &hello_aad(&meta.vault_id),
+    )
+    .map_err(|_| AppError::HelloFailed)?;
+    let bytes: [u8; KEY_LEN] = raw.as_slice().try_into().map_err(|_| AppError::Integrity)?;
+    load_contents(db, meta.vault_id, SecretKey::from_bytes(bytes))
 }
 
 pub fn vault_exists(db: &Database) -> AppResult<bool> {
@@ -418,6 +505,48 @@ mod tests {
             Err(AppError::InvalidPassword)
         ));
         assert!(unlock(&db, PASSWORD).is_ok());
+    }
+
+    #[test]
+    fn hello_envelope_unlocks_only_with_the_same_signature() {
+        let mut db = Database::open_in_memory().unwrap();
+        let vault = create(&mut db, PASSWORD, KdfParams::TEST).unwrap();
+        assert!(!hello_enabled(&db).unwrap());
+        assert!(matches!(
+            hello_challenge(&db),
+            Err(AppError::HelloUnavailable)
+        ));
+
+        let challenge = new_hello_challenge().unwrap();
+        enable_hello(&mut db, &vault, &challenge, b"signature-bytes").unwrap();
+        assert!(hello_enabled(&db).unwrap());
+        let (vault_id, stored) = hello_challenge(&db).unwrap();
+        assert_eq!(vault_id, vault.vault_id);
+        assert_eq!(stored, challenge);
+
+        let unlocked = unlock_with_hello(&db, b"signature-bytes").unwrap();
+        assert_eq!(unlocked.key.expose(), vault.key.expose());
+        assert!(matches!(
+            unlock_with_hello(&db, b"other"),
+            Err(AppError::HelloFailed)
+        ));
+
+        // the master password keeps working, and changing it keeps Hello working
+        change_master_password(
+            &mut db,
+            &vault,
+            PASSWORD,
+            "another long password",
+            KdfParams::TEST,
+        )
+        .unwrap();
+        assert!(unlock_with_hello(&db, b"signature-bytes").is_ok());
+
+        disable_hello(&mut db).unwrap();
+        assert!(matches!(
+            unlock_with_hello(&db, b"signature-bytes"),
+            Err(AppError::HelloUnavailable)
+        ));
     }
 
     #[test]

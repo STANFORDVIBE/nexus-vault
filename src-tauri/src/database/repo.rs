@@ -43,6 +43,8 @@ pub struct FolderRow {
 }
 
 pub const MASTER_ENVELOPE: &str = "master";
+/// Vault Key sealed with a key derived from a Windows Hello signature.
+pub const HELLO_ENVELOPE: &str = "hello";
 
 // ---- vault_meta -------------------------------------------------------------
 
@@ -102,6 +104,15 @@ pub fn update_kdf(conn: &Connection, kdf: KdfParams, salt: &[u8]) -> AppResult<(
 // ---- key_envelopes ------------------------------------------------------------
 
 pub fn upsert_envelope(conn: &Connection, envelope: &EnvelopeRow, now: i64) -> AppResult<()> {
+    upsert_envelope_as(conn, MASTER_ENVELOPE, envelope, now)
+}
+
+pub fn upsert_envelope_as(
+    conn: &Connection,
+    id: &str,
+    envelope: &EnvelopeRow,
+    now: i64,
+) -> AppResult<()> {
     conn.execute(
         "INSERT INTO key_envelopes (id, wrapped_key, nonce, crypto_version, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)
@@ -109,7 +120,7 @@ pub fn upsert_envelope(conn: &Connection, envelope: &EnvelopeRow, now: i64) -> A
              nonce = excluded.nonce, crypto_version = excluded.crypto_version,
              updated_at = excluded.updated_at",
         params![
-            MASTER_ENVELOPE,
+            id,
             envelope.wrapped_key,
             envelope.nonce,
             envelope.crypto_version,
@@ -120,10 +131,19 @@ pub fn upsert_envelope(conn: &Connection, envelope: &EnvelopeRow, now: i64) -> A
 }
 
 pub fn load_envelope(conn: &Connection) -> AppResult<Option<EnvelopeRow>> {
+    load_envelope_as(conn, MASTER_ENVELOPE)
+}
+
+pub fn delete_envelope(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute("DELETE FROM key_envelopes WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn load_envelope_as(conn: &Connection, id: &str) -> AppResult<Option<EnvelopeRow>> {
     Ok(conn
         .query_row(
             "SELECT wrapped_key, nonce, crypto_version FROM key_envelopes WHERE id = ?1",
-            [MASTER_ENVELOPE],
+            [id],
             |row| {
                 Ok(EnvelopeRow {
                     wrapped_key: row.get(0)?,
