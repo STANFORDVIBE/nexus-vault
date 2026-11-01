@@ -27,15 +27,38 @@ fn data_dir(app: &tauri::App) -> tauri::Result<std::path::PathBuf> {
     app.path().app_data_dir()
 }
 
+/// A debug build pointed at a separate data dir via `NEXUS_VAULT_DATA_DIR`.
+fn is_test_instance() -> bool {
+    cfg!(debug_assertions) && std::env::var_os("NEXUS_VAULT_DATA_DIR").is_some()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let quick_search = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyL);
 
-    tauri::Builder::default()
-        // must be first: a second launch just focuses the running instance
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            window::show_main_window(app);
-        }))
+    let mut builder = tauri::Builder::default();
+    // A test copy on its own data dir must not grab the single-instance lock or the
+    // global shortcut: otherwise launching the real app just focuses the test copy.
+    if !is_test_instance() {
+        builder = builder
+            // must be first: a second launch just focuses the running instance
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                window::show_main_window(app);
+            }))
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_shortcuts([quick_search])
+                    .expect("valid shortcut")
+                    .with_handler(|app, _shortcut, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            window::quick_search(app);
+                        }
+                    })
+                    .build(),
+            );
+    }
+
+    builder
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec![MINIMIZED_ARG]),
@@ -43,17 +66,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcuts([quick_search])
-                .expect("valid shortcut")
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        window::quick_search(app);
-                    }
-                })
-                .build(),
-        )
         .setup(|app| {
             let data_dir = data_dir(app)?;
             let state: commands::SharedState = Arc::new(AppState::new(data_dir.join(VAULT_FILE)));
