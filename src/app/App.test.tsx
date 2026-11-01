@@ -1,51 +1,125 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { clearMocks } from "@tauri-apps/api/mocks";
 import { App } from "@/app/App";
-import { getAppInfo } from "@/services/app";
+import { installMockBackend, type MockOptions } from "@/dev/mockBackend";
+import { useSessionStore } from "@/store/session";
 
-vi.mock("@/services/app", () => ({ getAppInfo: vi.fn() }));
 vi.mock("@/services/window", () => ({ setWindowTheme: vi.fn() }));
 
-describe("App shell", () => {
-  beforeEach(() => {
-    window.history.pushState({}, "", "/");
-    vi.mocked(getAppInfo).mockResolvedValue({ name: "Nexus Vault", version: "0.1.0" });
+const PASSWORD = "correct horse battery";
+
+function setup(options?: MockOptions) {
+  const backend = installMockBackend(options);
+  useSessionStore.setState({ status: null, revision: 0 });
+  const user = userEvent.setup();
+  render(<App />);
+  return { backend, user };
+}
+
+async function unlock(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(await screen.findByPlaceholderText("Мастер-пароль"), PASSWORD);
+  await user.click(screen.getByRole("button", { name: /Разблокировать/ }));
+  await screen.findByRole("navigation", { name: "Основная навигация" });
+}
+
+describe("Nexus Vault app", () => {
+  beforeEach(() => window.history.pushState({}, "", "/"));
+  afterEach(async () => {
+    // unmount and let the async unlisten calls finish while the mocked IPC still exists
+    cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    clearMocks();
   });
 
-  it("opens the design system and shows every sidebar section", async () => {
-    render(<App />);
+  it("creates a vault on first run and opens the dashboard", async () => {
+    const { user } = setup();
 
-    expect(await screen.findByRole("heading", { name: "Дизайн-система" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Создайте хранилище" })).toBeInTheDocument();
+    const create = screen.getByRole("button", { name: "Создать хранилище" });
 
-    const nav = screen.getByRole("navigation", { name: "Основная навигация" });
-    for (const label of [
-      "Обзор",
-      "Все записи",
-      "Пароли",
-      "Заметки",
-      "Избранное",
-      "Папки",
-      "Корзина",
-      "Настройки",
-    ]) {
-      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
-    }
+    await user.type(screen.getByLabelText("Мастер-пароль"), "short");
+    await user.type(screen.getByLabelText("Повторите пароль"), "short");
+    await user.click(screen.getByRole("checkbox"));
+    expect(create).toBeDisabled(); // under 10 characters
+
+    await user.type(screen.getByLabelText("Мастер-пароль"), "-but-long-enough");
+    await user.type(screen.getByLabelText("Повторите пароль"), "-but-different");
+    expect(screen.getByText("Пароли не совпадают")).toBeInTheDocument();
+    expect(create).toBeDisabled();
+
+    await user.clear(screen.getByLabelText("Повторите пароль"));
+    await user.type(screen.getByLabelText("Повторите пароль"), "short-but-long-enough");
+    await user.click(create);
+
+    expect(await screen.findByRole("heading", { name: "Обзор" })).toBeInTheDocument();
+    expect(await screen.findByText("Хранилище пока пустое")).toBeInTheDocument();
+    expect(screen.getByText("Разблокировано")).toBeInTheDocument();
   });
 
-  it("shows the backend version and an honest vault status", async () => {
-    render(<App />);
+  it("rejects a wrong master password and unlocks with the right one", async () => {
+    const { user } = setup({ state: "locked", seed: true });
 
-    expect(await screen.findByText("v0.1.0")).toBeInTheDocument();
-    expect(screen.getByText("Хранилище не создано")).toBeInTheDocument();
+    await user.type(await screen.findByPlaceholderText("Мастер-пароль"), "nope");
+    await user.click(screen.getByRole("button", { name: /Разблокировать/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Неверный мастер-пароль");
+
+    await user.clear(screen.getByPlaceholderText("Мастер-пароль"));
+    await unlock(user);
+    expect((await screen.findAllByText("GitHub")).length).toBeGreaterThan(0);
   });
 
-  it("navigates between sections and marks the active one", async () => {
-    const user = userEvent.setup();
-    render(<App />);
+  it("returns to the lock screen when the backend locks the vault", async () => {
+    const { backend, user } = setup({ state: "locked", seed: true });
+    await unlock(user);
 
-    await user.click(screen.getByRole("link", { name: "Пароли" }));
+    act(() => backend.lockFromBackend());
 
-    expect(screen.getByText("Пароли: ещё в разработке")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Пароли" })).toHaveAttribute("aria-current", "page");
+    expect(
+      await screen.findByRole("heading", { name: "Хранилище заблокировано" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Основная навигация" })).toBeNull();
+  });
+
+  it("adds a login, then finds it with search", async () => {
+    window.history.pushState({}, "", "/passwords");
+    const { backend, user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+
+    await user.click(await screen.findByRole("button", { name: "Добавить" }));
+    await user.type(await screen.findByLabelText("Название"), "Steam");
+    await user.type(screen.getByLabelText("Логин"), "gamer");
+    await user.type(screen.getByLabelText("Пароль"), "pa55-word");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    const list = await screen.findByRole("listbox", { name: "Записи" });
+    expect(await within(list).findByText("Steam")).toBeInTheDocument();
+    // the detail view never receives the password itself
+    expect(screen.queryByText("pa55-word")).toBeNull();
+
+    await user.type(screen.getByRole("searchbox", { name: "Поиск" }), "steam");
+    await waitFor(() => expect(within(list).getAllByRole("option")).toHaveLength(1));
+
+    await user.click(screen.getAllByRole("button", { name: "Копировать" })[1]!);
+    expect(backend.clipboard.value).toBe("pa55-word");
+  });
+
+  it("moves an item to the trash and restores it", async () => {
+    window.history.pushState({}, "", "/items");
+    const { user } = setup({ state: "locked", seed: true });
+    await unlock(user);
+
+    await user.click(await screen.findByText("Банк"));
+    await user.click(await screen.findByRole("button", { name: "Ещё" }));
+    await user.click(await screen.findByRole("menuitem", { name: "В корзину" }));
+    await waitFor(() => expect(screen.queryByText("Банк")).toBeNull());
+
+    await user.click(screen.getByRole("link", { name: "Корзина" }));
+    await user.click(await screen.findByText("Банк"));
+    await user.click(await screen.findByRole("button", { name: "Восстановить" }));
+    await waitFor(() => expect(screen.queryByText("Банк")).toBeNull());
+
+    await user.click(screen.getByRole("link", { name: "Все записи" }));
+    expect(await screen.findByText("Банк")).toBeInTheDocument();
   });
 });

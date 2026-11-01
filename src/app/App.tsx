@@ -1,28 +1,43 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
-import { NAV_SECTIONS, SETTINGS_NAV } from "@/app/navigation";
-import { SectionPlaceholder } from "@/app/SectionPlaceholder";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DesignSystemPage } from "@/features/design-system/DesignSystemPage";
+import { VaultGate } from "@/features/auth/VaultGate";
+import { DashboardPage } from "@/features/dashboard/DashboardPage";
+import { FoldersPage } from "@/features/folders/FoldersPage";
+import { GeneratorPage } from "@/features/generator/GeneratorPage";
+import { ItemsPage } from "@/features/items/ItemsPage";
+import { SettingsPage } from "@/features/settings/SettingsPage";
 
-const PLACEHOLDER_ROUTES = [...NAV_SECTIONS.flatMap((section) => section.items), SETTINGS_NAV];
+/** Remounts the list per folder so search and selection start fresh. */
+function FolderItems() {
+  const { folderId } = useParams();
+  return <ItemsPage key={folderId} view="folder" />;
+}
 
 export function App() {
   return (
     <TooltipProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route index element={<Navigate to="/design-system" replace />} />
-            <Route path="design-system" element={<DesignSystemPage />} />
-            {PLACEHOLDER_ROUTES.map((item) => (
-              <Route key={item.to} path={item.to} element={<SectionPlaceholder />} />
-            ))}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <VaultGate>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="items" element={<ItemsPage key="all" view="all" />} />
+              <Route path="passwords" element={<ItemsPage key="logins" view="logins" />} />
+              <Route path="notes" element={<ItemsPage key="notes" view="notes" />} />
+              <Route path="favorites" element={<ItemsPage key="favorites" view="favorites" />} />
+              <Route path="trash" element={<ItemsPage key="trash" view="trash" />} />
+              <Route path="folders" element={<FoldersPage />} />
+              <Route path="folders/:folderId" element={<FolderItems />} />
+              <Route path="generator" element={<GeneratorPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </VaultGate>
       <Toaster />
     </TooltipProvider>
   );

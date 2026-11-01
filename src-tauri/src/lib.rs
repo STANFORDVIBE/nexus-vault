@@ -83,6 +83,7 @@ pub fn run() {
             commands::items::reveal_password,
             commands::items::copy_item_field,
             commands::items::open_item_website,
+            commands::items::open_external_url,
             commands::folders::list_folders,
             commands::folders::create_folder,
             commands::folders::rename_folder,

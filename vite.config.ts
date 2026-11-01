@@ -40,6 +40,8 @@ export default defineConfig({
   // WebView2 on Windows 10/11 is evergreen Chromium
   build: {
     target: "chrome120",
+    // one bundle loaded from local disk, not the network: size warnings are not useful here
+    chunkSizeWarningLimit: 1500,
   },
 
   test: {

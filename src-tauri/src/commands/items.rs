@@ -108,8 +108,6 @@ pub async fn open_item_website(
     state: State<'_, SharedState>,
     id: String,
 ) -> AppResult<()> {
-    use tauri_plugin_opener::OpenerExt;
-
     let website = with_unlocked(&state, |_, vault| {
         vault.field_value(&id, CopyField::Website)
     })?;
@@ -118,13 +116,31 @@ pub async fn open_item_website(
     } else {
         format!("https://{website}")
     };
-    let lower = url.to_ascii_lowercase();
-    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+    open_web_url(&app, url)
+}
+
+/// Opens a link clicked inside a rendered markdown note. Same http(s)-only rule.
+#[tauri::command]
+pub async fn open_external_url(app: AppHandle, url: String) -> AppResult<()> {
+    open_web_url(&app, url)
+}
+
+fn open_web_url(app: &AppHandle, url: String) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+
+    if !is_web_url(&url) {
         return Err(AppError::Validation("website"));
     }
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|_| AppError::Internal)
+}
+
+fn is_web_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://"))
+        && url.len() <= 2048
+        && !url.chars().any(char::is_control)
 }
 
 /// Copies a field to the clipboard from Rust, so secrets never pass through JS.
@@ -146,4 +162,19 @@ pub async fn copy_item_field(
     let clear_after = if field.is_secret() { clear_after } else { 0 };
     clipboard::copy(&app, value, field.is_secret(), clear_after)?;
     Ok(clear_after)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_web_url;
+
+    #[test]
+    fn only_web_urls_are_opened() {
+        assert!(is_web_url("https://example.com/a?b=c"));
+        assert!(is_web_url("HTTP://example.com"));
+        assert!(!is_web_url("file:///C:/Windows/System32/calc.exe"));
+        assert!(!is_web_url("javascript:alert(1)"));
+        assert!(!is_web_url("ms-settings:"));
+        assert!(!is_web_url("https://example.com/\nfoo"));
+    }
 }

@@ -3,7 +3,7 @@ import {
   KeyRoundIcon,
   LayersIcon,
   LayoutDashboardIcon,
-  PaletteIcon,
+  DicesIcon,
   SettingsIcon,
   StarIcon,
   StickyNoteIcon,
@@ -45,13 +45,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/trash", label: "Корзина", icon: Trash2Icon },
     ],
   },
+  {
+    id: "tools",
+    items: [{ to: "/generator", label: "Генератор", icon: DicesIcon }],
+  },
 ];
 
 export const SETTINGS_NAV: NavItem = { to: "/settings", label: "Настройки", icon: SettingsIcon };
-
-// Temporary entry for Phase 2: the component showcase. Removed once real screens land.
-export const DESIGN_SYSTEM_NAV: NavItem = {
-  to: "/design-system",
-  label: "Дизайн-система",
-  icon: PaletteIcon,
-};

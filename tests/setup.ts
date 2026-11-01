@@ -22,3 +22,9 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 };
+
+// jsdom gaps used by Radix Select/Dropdown and the item list
+Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.releasePointerCapture ??= () => {};
+globalThis.CSS ??= { escape: (value: string) => value } as typeof CSS;
