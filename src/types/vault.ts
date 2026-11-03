@@ -118,6 +118,8 @@ export interface LoginView {
   hasPassword: boolean;
   fields: FieldView[];
   passwordChangedAt: number | null;
+  /** Previous passwords, newest first: only when each was replaced. */
+  passwordHistory: { replacedAt: number }[];
 }
 
 /** Card detail: number, CVV and PIN stay in Rust (only `•••• 1234` is shown). */
@@ -185,7 +187,8 @@ export type CopyField =
   | "card_pin"
   | "cardholder"
   | "doc_number"
-  | `custom:${number}`;
+  | `custom:${number}`
+  | `history:${number}`;
 
 export interface FolderView {
   id: string;

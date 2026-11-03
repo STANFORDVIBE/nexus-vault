@@ -1,5 +1,6 @@
 //! Application core: vault session state and shared types.
 
+pub mod attachments;
 pub mod error;
 pub mod export;
 pub mod folders;

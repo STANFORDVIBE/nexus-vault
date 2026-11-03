@@ -5,14 +5,18 @@
 use std::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::core::error::{AppError, AppResult};
-use crate::core::model::{CustomField, ItemPayload, ItemType};
+use crate::core::model::{CustomField, ItemPayload, ItemType, LoginPayload, OldPassword};
 use crate::core::time::now_millis;
 use crate::core::vault::{UnlockedVault, VaultItem, encode_payload, item_aad};
 use crate::crypto::{CRYPTO_VERSION, aead, random};
 use crate::database::Database;
 use crate::database::repo::{self, ItemRow};
+
+/// How many replaced passwords a login keeps.
+pub const MAX_PASSWORD_HISTORY: usize = 10;
 
 // ---- views sent to the frontend ---------------------------------------------------
 
@@ -54,6 +58,13 @@ fn field_views(fields: &[CustomField]) -> Vec<FieldView> {
         .collect()
 }
 
+/// A previous password as the UI sees it: only when it was replaced.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OldPasswordView {
+    pub replaced_at: i64,
+}
+
 /// Last four digits for display: `•••• 1234`.
 fn masked_tail(number: &str) -> String {
     let digits: Vec<char> = number.chars().collect();
@@ -77,6 +88,7 @@ pub enum ItemContentView {
         has_password: bool,
         fields: Vec<FieldView>,
         password_changed_at: Option<i64>,
+        password_history: Vec<OldPasswordView>,
     },
     #[serde(rename_all = "camelCase")]
     SecureNote {
@@ -175,6 +187,8 @@ pub enum CopyField {
     Cardholder,
     DocNumber,
     Custom(usize),
+    /// A previous login password, by index in the history (0 = most recent).
+    OldPassword(usize),
 }
 
 impl CopyField {
@@ -190,7 +204,11 @@ impl CopyField {
             "card_pin" => CopyField::CardPin,
             "cardholder" => CopyField::Cardholder,
             "doc_number" => CopyField::DocNumber,
-            other => CopyField::Custom(other.strip_prefix("custom:")?.parse().ok()?),
+            other => match other.split_once(':')? {
+                ("custom", index) => CopyField::Custom(index.parse().ok()?),
+                ("history", index) => CopyField::OldPassword(index.parse().ok()?),
+                _ => return None,
+            },
         })
     }
 }
@@ -236,6 +254,8 @@ fn host_of(url: &str) -> String {
 fn first_line_preview(markdown: &str) -> Option<String> {
     let line = markdown
         .lines()
+        // an image line would show as `![](attachment:…)`
+        .filter(|l| !l.trim_start().starts_with("!["))
         .map(|l| {
             l.trim()
                 .trim_start_matches(['#', '>', '-', '*', ' '])
@@ -300,6 +320,13 @@ fn detail(item: &VaultItem) -> ItemDetail {
             has_password: p.password.is_some(),
             fields: field_views(&p.fields),
             password_changed_at: p.password_changed_at,
+            password_history: p
+                .password_history
+                .iter()
+                .map(|old| OldPasswordView {
+                    replaced_at: old.replaced_at,
+                })
+                .collect(),
         },
         ItemPayload::SecureNote(p) => ItemContentView::SecureNote {
             title: p.title.clone(),
@@ -403,6 +430,25 @@ fn match_score(item: &VaultItem, terms: &[String]) -> u8 {
         }
     }
     score
+}
+
+/// Puts the replaced password on top of the history. Going back to a password that is
+/// already in the history moves it out of there instead of keeping a duplicate.
+fn remember_old_password(login: &mut LoginPayload, old: Option<&str>, now: i64) {
+    let history = &mut login.password_history;
+    if let Some(current) = login.password.as_deref() {
+        history.retain(|h| h.password != current);
+    }
+    if let Some(old) = old {
+        history.insert(
+            0,
+            OldPassword {
+                password: old.to_string(),
+                replaced_at: now,
+            },
+        );
+    }
+    history.truncate(MAX_PASSWORD_HISTORY);
 }
 
 impl UnlockedVault {
@@ -521,6 +567,10 @@ impl UnlockedVault {
             (ItemPayload::Card(p), CopyField::CardPin) => secret(&p.pin),
             (ItemPayload::Card(p), CopyField::Cardholder) => public(&p.cardholder),
             (ItemPayload::Identity(p), CopyField::DocNumber) => secret(&p.number),
+            (ItemPayload::Login(p), CopyField::OldPassword(index)) => p
+                .password_history
+                .get(index)
+                .map(|old| (old.password.clone(), true)),
             (payload, CopyField::Custom(index)) => payload
                 .fields()
                 .get(index)
@@ -535,9 +585,14 @@ impl UnlockedVault {
         self.field(id, field).map(|f| f.value)
     }
 
-    /// The complete decrypted payload, for the edit form only.
+    /// The complete decrypted payload, for the edit form only. Old passwords are left
+    /// out: the form cannot change them, and they are revealed one by one on request.
     pub fn payload_for_edit(&self, id: &str) -> AppResult<ItemPayload> {
-        Ok(self.item(id)?.payload.clone())
+        let mut payload = self.item(id)?.payload.clone();
+        if let ItemPayload::Login(p) = &mut payload {
+            p.password_history.clear();
+        }
+        Ok(payload)
     }
 
     pub fn create_item(
@@ -552,6 +607,7 @@ impl UnlockedVault {
         let now = now_millis();
         if let ItemPayload::Login(p) = &mut payload {
             p.password_changed_at = p.password.is_some().then_some(now);
+            p.password_history.clear();
         }
 
         let id = random::new_id()?;
@@ -600,15 +656,17 @@ impl UnlockedVault {
         payload.validate_and_normalize()?;
         self.ensure_folder(folder_id.as_deref())?;
         let now = now_millis();
-        // the password age is tracked here, never taken from the client
+        // password age and history are tracked here, never taken from the client
         if let (ItemPayload::Login(new), ItemPayload::Login(old)) =
             (&mut payload, &self.item(id)?.payload)
         {
-            new.password_changed_at = if new.password == old.password {
-                old.password_changed_at
+            new.password_history = old.password_history.clone();
+            if new.password == old.password {
+                new.password_changed_at = old.password_changed_at;
             } else {
-                new.password.is_some().then_some(now)
-            };
+                new.password_changed_at = new.password.is_some().then_some(now);
+                remember_old_password(new, old.password.as_deref(), now);
+            }
         }
 
         let sealed = self.seal_payload(id, &payload)?;
@@ -630,6 +688,41 @@ impl UnlockedVault {
         item.payload = payload;
         item.folder_id = folder_id;
         item.updated_at = now;
+        Ok(())
+    }
+
+    /// Forgets every previous password of a login.
+    pub fn clear_password_history(&mut self, db: &mut Database, id: &str) -> AppResult<()> {
+        let item = self.item(id)?;
+        let ItemPayload::Login(current) = &item.payload else {
+            return Err(AppError::Validation("type"));
+        };
+        if current.password_history.is_empty() {
+            return Ok(());
+        }
+        let mut payload = item.payload.clone();
+        if let ItemPayload::Login(p) = &mut payload {
+            p.password_history.zeroize();
+            p.password_history = Vec::new();
+        }
+        // not a content edit: `updated_at` stays as it was
+        let updated_at = item.updated_at;
+        let folder_id = item.folder_id.clone();
+        let sealed = self.seal_payload(id, &payload)?;
+        db.transaction(|tx| {
+            repo::update_item_payload(
+                tx,
+                id,
+                &sealed.ciphertext,
+                &sealed.nonce,
+                CRYPTO_VERSION,
+                folder_id.as_deref(),
+                updated_at,
+            )
+        })?;
+        if let Some(item) = self.items.get_mut(id) {
+            item.payload = payload;
+        }
         Ok(())
     }
 
@@ -1077,7 +1170,72 @@ mod tests {
     }
 
     #[test]
+    fn replaced_passwords_go_to_history() {
+        let (mut db, mut vault) = setup();
+        let id = vault
+            .create_item(&mut db, login("A", "u", "first"), None, false)
+            .unwrap();
+        let set_password = |vault: &mut UnlockedVault, db: &mut Database, pw: &str| {
+            let mut payload = vault.payload_for_edit(&id).unwrap();
+            if let ItemPayload::Login(p) = &mut payload {
+                p.password = Some(pw.into());
+                // whatever the client sends as history is ignored
+                p.password_history = vec![OldPassword {
+                    password: "forged".into(),
+                    replaced_at: 1,
+                }];
+            }
+            vault.update_item(db, &id, payload, None).unwrap();
+        };
+        let history = |vault: &UnlockedVault| -> Vec<String> {
+            let ItemPayload::Login(p) = &vault.items[&id].payload else {
+                unreachable!()
+            };
+            p.password_history
+                .iter()
+                .map(|h| h.password.clone())
+                .collect()
+        };
+
+        set_password(&mut vault, &mut db, "second");
+        set_password(&mut vault, &mut db, "third");
+        assert_eq!(history(&vault), ["second", "first"]);
+        let old = vault.field(&id, CopyField::OldPassword(1)).unwrap();
+        assert!(old.secret && old.value == "first");
+
+        // the edit form never sees old passwords
+        let ItemPayload::Login(p) = &vault.payload_for_edit(&id).unwrap() else {
+            unreachable!()
+        };
+        assert!(p.password_history.is_empty());
+
+        // going back to an old password does not duplicate it
+        set_password(&mut vault, &mut db, "first");
+        assert_eq!(history(&vault), ["third", "second"]);
+
+        for i in 0..20 {
+            set_password(&mut vault, &mut db, &format!("pw{i}"));
+        }
+        assert_eq!(history(&vault).len(), MAX_PASSWORD_HISTORY);
+
+        drop(vault);
+        let mut vault = vault::unlock(&db, PASSWORD).unwrap();
+        assert_eq!(history(&vault)[0], "pw18");
+        let updated = vault.items[&id].updated_at;
+        vault.clear_password_history(&mut db, &id).unwrap();
+        assert!(history(&vault).is_empty());
+        assert_eq!(vault.items[&id].updated_at, updated);
+        drop(vault);
+        let vault = vault::unlock(&db, PASSWORD).unwrap();
+        assert!(history(&vault).is_empty());
+    }
+
+    #[test]
     fn copy_field_names_parse() {
+        assert_eq!(
+            CopyField::parse("history:3"),
+            Some(CopyField::OldPassword(3))
+        );
         assert_eq!(CopyField::parse("card_pin"), Some(CopyField::CardPin));
         assert_eq!(CopyField::parse("custom:12"), Some(CopyField::Custom(12)));
         assert_eq!(CopyField::parse("custom:x"), None);

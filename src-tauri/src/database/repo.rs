@@ -42,6 +42,15 @@ pub struct FolderRow {
     pub updated_at: i64,
 }
 
+pub struct AttachmentRow {
+    pub id: String,
+    pub item_id: String,
+    pub encrypted_data: Vec<u8>,
+    pub nonce: Vec<u8>,
+    pub crypto_version: i64,
+    pub created_at: i64,
+}
+
 pub const MASTER_ENVELOPE: &str = "master";
 /// Vault Key sealed with a key derived from a Windows Hello signature.
 pub const HELLO_ENVELOPE: &str = "hello";
@@ -259,6 +268,64 @@ pub fn delete_item(conn: &Connection, id: &str) -> AppResult<bool> {
 
 pub fn delete_trashed_items(conn: &Connection) -> AppResult<usize> {
     Ok(conn.execute("DELETE FROM items WHERE deleted_at IS NOT NULL", [])?)
+}
+
+// ---- attachments ------------------------------------------------------------------
+
+const ATTACHMENT_COLUMNS: &str = "id, item_id, encrypted_data, nonce, crypto_version, created_at";
+
+fn attachment_from_row(row: &Row<'_>) -> rusqlite::Result<AttachmentRow> {
+    Ok(AttachmentRow {
+        id: row.get(0)?,
+        item_id: row.get(1)?,
+        encrypted_data: row.get(2)?,
+        nonce: row.get(3)?,
+        crypto_version: row.get(4)?,
+        created_at: row.get(5)?,
+    })
+}
+
+pub fn insert_attachment(conn: &Connection, attachment: &AttachmentRow) -> AppResult<()> {
+    conn.execute(
+        &format!("INSERT INTO attachments ({ATTACHMENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"),
+        params![
+            attachment.id,
+            attachment.item_id,
+            attachment.encrypted_data,
+            attachment.nonce,
+            attachment.crypto_version,
+            attachment.created_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn load_attachment(conn: &Connection, id: &str) -> AppResult<Option<AttachmentRow>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE id = ?1"),
+            [id],
+            attachment_from_row,
+        )
+        .optional()?)
+}
+
+/// Every attachment with its data: for backups only.
+pub fn load_attachments(conn: &Connection) -> AppResult<Vec<AttachmentRow>> {
+    let mut stmt = conn.prepare(&format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments"))?;
+    let rows = stmt.query_map([], attachment_from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// `(attachment id, item id)` pairs, without the data.
+pub fn list_attachment_ids(conn: &Connection) -> AppResult<Vec<(String, String)>> {
+    let mut stmt = conn.prepare("SELECT id, item_id FROM attachments")?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub fn delete_attachment(conn: &Connection, id: &str) -> AppResult<bool> {
+    Ok(conn.execute("DELETE FROM attachments WHERE id = ?1", [id])? == 1)
 }
 
 // ---- folders --------------------------------------------------------------------

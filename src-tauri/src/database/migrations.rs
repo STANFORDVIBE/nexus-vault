@@ -3,7 +3,10 @@ use rusqlite::{Connection, params};
 use crate::core::error::{AppError, AppResult};
 
 /// Ordered list of embedded migrations. Never edit an applied migration: add a new one.
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../../migrations/0001_initial.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../../migrations/0001_initial.sql")),
+    (2, include_str!("../../migrations/0002_attachments.sql")),
+];
 
 pub fn latest_version() -> i64 {
     MIGRATIONS.last().map_or(0, |(version, _)| *version)

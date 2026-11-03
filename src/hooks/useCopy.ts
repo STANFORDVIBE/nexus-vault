@@ -4,7 +4,7 @@ import { errorMessage } from "@/services/errors";
 import { copyGenerated, copyItemField } from "@/services/vault";
 import type { CopyField } from "@/types/vault";
 
-type NamedField = Exclude<CopyField, `custom:${number}`>;
+type NamedField = Exclude<CopyField, `custom:${number}` | `history:${number}`>;
 
 const FIELD_LABELS: Record<NamedField, string> = {
   username: "Логин",
@@ -30,7 +30,12 @@ export function useCopy() {
   const copyField = useCallback(async (id: string, field: CopyField, label?: string) => {
     try {
       const name =
-        label ?? (field.startsWith("custom:") ? "поле" : FIELD_LABELS[field as NamedField]);
+        label ??
+        (field.startsWith("custom:")
+          ? "поле"
+          : field.startsWith("history:")
+            ? "старый пароль"
+            : FIELD_LABELS[field as NamedField]);
       notify(name, await copyItemField(id, field));
     } catch (error) {
       toast.error(errorMessage(error));

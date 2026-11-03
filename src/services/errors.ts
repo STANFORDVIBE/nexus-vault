@@ -53,6 +53,10 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   auto_backup_interval_hours: "Интервал автокопий — от 1 часа до 30 дней",
   auto_backup_keep: "Хранить можно от 1 до 100 автокопий",
   auto_backup_dir: "Выберите папку для автокопий заново",
+  image: "Поддерживаются картинки PNG, JPEG, WebP и GIF",
+  image_too_large: "Картинка слишком большая — не больше 20 МБ",
+  too_many_images: "В одной заметке — не больше 200 картинок",
+  item: "Сначала сохраните заметку",
 };
 
 const MESSAGES: Record<string, string> = {

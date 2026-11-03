@@ -1,10 +1,16 @@
-import ReactMarkdown, { type Components } from "react-markdown";
+import { useState } from "react";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import { ImageOffIcon } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "cn";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ATTACHMENT_PREFIX, useAttachmentUrl } from "@/features/items/attachments";
 import { errorMessage } from "@/services/errors";
 import { openExternalUrl } from "@/services/vault";
 
 // Links never navigate the WebView: they open in the system browser through Rust,
-// which allows only http(s). Images are not rendered at all (no network requests).
+// which allows only http(s). Only the note's own encrypted images are shown;
+// external image URLs are never loaded (no network requests).
 const components: Components = {
   a: ({ href, children }) => (
     <a
@@ -18,15 +24,87 @@ const components: Components = {
       {children}
     </a>
   ),
-  img: ({ alt }) => <span className="text-muted-foreground">[{alt || "изображение"}]</span>,
+  img: ({ src, alt }) =>
+    typeof src === "string" && src.startsWith(ATTACHMENT_PREFIX) ? (
+      <AttachmentImage id={src.slice(ATTACHMENT_PREFIX.length)} alt={alt ?? ""} />
+    ) : (
+      <span className="text-muted-foreground">[{alt || "изображение"}]</span>
+    ),
 };
+
+const urlTransform = (url: string) =>
+  url.startsWith(ATTACHMENT_PREFIX) ? url : defaultUrlTransform(url);
 
 export function Markdown({ children }: { children: string }) {
   return (
     <div className="markdown text-sm leading-relaxed">
-      <ReactMarkdown components={components} skipHtml>
+      <ReactMarkdown components={components} urlTransform={urlTransform} skipHtml>
         {children}
       </ReactMarkdown>
     </div>
+  );
+}
+
+interface AttachmentImageProps {
+  id: string;
+  alt: string;
+  /** Square thumbnail instead of the full-width picture. */
+  thumbnail?: boolean;
+}
+
+/** An encrypted note image; click opens it full size. */
+export function AttachmentImage({ id, alt, thumbnail }: AttachmentImageProps) {
+  const { url, failed } = useAttachmentUrl(id);
+  const [open, setOpen] = useState(false);
+
+  if (failed) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground">
+        <ImageOffIcon className="size-3.5" />
+        Картинка не найдена
+      </span>
+    );
+  }
+  if (!url) {
+    return (
+      <span
+        role="img"
+        aria-label={alt || "Картинка загружается"}
+        className={cn(
+          "inline-block animate-pulse rounded-md bg-muted align-middle",
+          thumbnail ? "size-20" : "h-40 w-64 max-w-full",
+        )}
+      />
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn(
+          "cursor-zoom-in overflow-hidden rounded-md border border-border align-middle focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+          thumbnail ? "inline-block size-20" : "my-1 block max-w-full",
+        )}
+        aria-label={alt ? `Открыть картинку «${alt}»` : "Открыть картинку"}
+      >
+        <img
+          src={url}
+          alt={alt}
+          draggable={false}
+          className={thumbnail ? "size-full object-cover" : "max-h-[28rem] max-w-full"}
+        />
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="w-auto max-w-[95vw] p-2 sm:max-w-[95vw]">
+          <DialogTitle className="sr-only">{alt || "Картинка"}</DialogTitle>
+          <img
+            src={url}
+            alt={alt}
+            className="max-h-[88vh] max-w-[calc(95vw-1rem)] rounded-md object-contain"
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

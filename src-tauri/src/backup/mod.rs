@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::core::attachments;
 use crate::core::error::{AppError, AppResult};
 use crate::core::model::ItemType;
 use crate::core::time::now_millis;
@@ -29,10 +30,11 @@ use crate::crypto::CRYPTO_VERSION;
 use crate::crypto::aead::{self, KEY_LEN, SecretKey};
 use crate::crypto::kdf::{self, KDF_ALGORITHM, KdfParams};
 use crate::database::Database;
-use crate::database::repo::{self, EnvelopeRow, FolderRow, ItemRow, VaultMetaRow};
+use crate::database::repo::{self, AttachmentRow, EnvelopeRow, FolderRow, ItemRow, VaultMetaRow};
 
 pub const MAGIC: &[u8; 8] = b"NXVBAK\x00\x01";
-pub const BACKUP_FORMAT_VERSION: u32 = 1;
+/// 2: note images (`attachments`). Version 1 files are still restored.
+pub const BACKUP_FORMAT_VERSION: u32 = 2;
 pub const EXTENSION: &str = "nexus";
 const MAX_HEADER: usize = 64 * 1024;
 const MAX_BACKUP_SIZE: u64 = 1024 * 1024 * 1024;
@@ -84,11 +86,24 @@ struct BackupFolder {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct BackupAttachment {
+    id: String,
+    item_id: String,
+    encrypted_data: String,
+    nonce: String,
+    crypto_version: i64,
+    created_at: i64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Body {
     vault_created_at: i64,
     folders: Vec<BackupFolder>,
     items: Vec<BackupItem>,
     settings: Vec<(String, String)>,
+    #[serde(default)]
+    attachments: Vec<BackupAttachment>,
 }
 
 /// What the UI shows before asking for the password.
@@ -161,6 +176,17 @@ pub fn create_backup_bytes(db: &Database, vault_key: &SecretKey) -> AppResult<Ve
             })
             .collect(),
         settings: repo::load_settings(db.conn())?,
+        attachments: repo::load_attachments(db.conn())?
+            .into_iter()
+            .map(|a| BackupAttachment {
+                id: a.id,
+                item_id: a.item_id,
+                encrypted_data: hex::encode(&a.encrypted_data),
+                nonce: hex::encode(&a.nonce),
+                crypto_version: a.crypto_version,
+                created_at: a.created_at,
+            })
+            .collect(),
     };
     let body_json =
         zeroize::Zeroizing::new(serde_json::to_vec(&body).map_err(|_| AppError::Internal)?);
@@ -251,6 +277,7 @@ pub struct VerifiedBackup {
     envelope: EnvelopeRow,
     folders: Vec<FolderRow>,
     items: Vec<ItemRow>,
+    attachments: Vec<AttachmentRow>,
     settings: Vec<(String, String)>,
 }
 
@@ -361,6 +388,36 @@ pub fn verify(bytes: &[u8], password: &str) -> AppResult<VerifiedBackup> {
         vault::decode_payload(&plain, item_type).map_err(|_| AppError::InvalidBackup)?;
     }
 
+    let attachments: Vec<AttachmentRow> = body
+        .attachments
+        .into_iter()
+        .map(|a| {
+            Ok(AttachmentRow {
+                encrypted_data: decode(&a.encrypted_data)?,
+                nonce: decode(&a.nonce)?,
+                id: a.id,
+                item_id: a.item_id,
+                crypto_version: a.crypto_version,
+                created_at: a.created_at,
+            })
+        })
+        .collect::<AppResult<_>>()?;
+    for attachment in &attachments {
+        if !items.iter().any(|i| i.id == attachment.item_id) {
+            return Err(AppError::InvalidBackup);
+        }
+        let plain = aead::open(
+            &vault_key,
+            &attachment.nonce,
+            &attachment.encrypted_data,
+            &attachments::attachment_aad(&header.vault_id, &attachment.item_id, &attachment.id),
+        )
+        .map_err(|_| AppError::InvalidBackup)?;
+        if !attachments::is_valid_plaintext(&plain) {
+            return Err(AppError::InvalidBackup);
+        }
+    }
+
     Ok(VerifiedBackup {
         meta: VaultMetaRow {
             vault_id: header.vault_id,
@@ -377,6 +434,7 @@ pub fn verify(bytes: &[u8], password: &str) -> AppResult<VerifiedBackup> {
         },
         folders,
         items,
+        attachments,
         settings: body.settings,
     })
 }
@@ -394,6 +452,9 @@ pub fn write_database(path: &Path, backup: &VerifiedBackup) -> AppResult<()> {
         }
         for item in &backup.items {
             repo::insert_item(tx, item)?;
+        }
+        for attachment in &backup.attachments {
+            repo::insert_attachment(tx, attachment)?;
         }
         for (key, value) in &backup.settings {
             repo::set_setting(tx, key, value)?;
@@ -497,6 +558,50 @@ mod tests {
     }
 
     #[test]
+    fn note_images_survive_backup_and_restore() {
+        use crate::core::model::SecureNotePayload;
+        let (mut db, mut v) = vault_with_data();
+        let note = v
+            .create_item(
+                &mut db,
+                ItemPayload::SecureNote(SecureNotePayload {
+                    title: "Скрин".into(),
+                    content: String::new(),
+                    tags: vec![],
+                }),
+                None,
+                false,
+            )
+            .unwrap();
+        let png = b"\x89PNG\r\n\x1a\nscreenshot-bytes";
+        let id = v.add_attachment(&mut db, &note, png).unwrap();
+
+        let bytes = create_backup_bytes(&db, &v.key).unwrap();
+        let verified = verify(&bytes, PASSWORD).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("restored.db");
+        write_database(&path, &verified).unwrap();
+        let restored_db = Database::open(&path).unwrap();
+        let restored = vault::unlock(&restored_db, PASSWORD).unwrap();
+        assert_eq!(
+            &restored.read_attachment(&restored_db, &id).unwrap()[10..],
+            png
+        );
+    }
+
+    #[test]
+    fn version_1_backups_without_images_still_restore() {
+        let (db, v) = vault_with_data();
+        let bytes = create_backup_bytes(&db, &v.key).unwrap();
+        // a v1 body simply has no "attachments" key; serde fills in an empty list
+        let body: Body =
+            serde_json::from_str(r#"{"vaultCreatedAt":1,"folders":[],"items":[],"settings":[]}"#)
+                .unwrap();
+        assert!(body.attachments.is_empty());
+        assert!(verify(&bytes, PASSWORD).is_ok());
+    }
+
+    #[test]
     fn wrong_password_is_rejected() {
         let (db, v) = vault_with_data();
         let bytes = create_backup_bytes(&db, &v.key).unwrap();
@@ -538,8 +643,10 @@ mod tests {
     fn newer_format_is_refused() {
         let (db, v) = vault_with_data();
         let bytes = create_backup_bytes(&db, &v.key).unwrap();
-        let text =
-            String::from_utf8_lossy(&bytes).replace("\"formatVersion\":1", "\"formatVersion\":9");
+        let text = String::from_utf8_lossy(&bytes).replace(
+            &format!("\"formatVersion\":{BACKUP_FORMAT_VERSION}"),
+            "\"formatVersion\":9",
+        );
         assert!(matches!(
             verify(text.as_bytes(), PASSWORD),
             Err(AppError::UnsupportedVersion | AppError::InvalidBackup)

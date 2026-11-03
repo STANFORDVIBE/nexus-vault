@@ -5,6 +5,7 @@
 //! a second, and synchronous commands would freeze the window meanwhile.
 
 pub mod app;
+pub mod attachments;
 pub mod backup;
 pub mod folders;
 pub mod generator;

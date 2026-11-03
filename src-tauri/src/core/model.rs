@@ -47,6 +47,15 @@ pub struct CustomField {
     pub hidden: bool,
 }
 
+/// A password the login used before, kept so a hasty change can be undone.
+#[derive(Clone, Default, Serialize, Deserialize, Zeroize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OldPassword {
+    pub password: String,
+    /// When it was replaced.
+    pub replaced_at: i64,
+}
+
 #[derive(Clone, Default, Serialize, Deserialize, Zeroize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LoginPayload {
@@ -68,6 +77,9 @@ pub struct LoginPayload {
     /// When the password last changed (set by the backend, for the password report).
     #[serde(default)]
     pub password_changed_at: Option<i64>,
+    /// Previous passwords, newest first. Maintained by the backend only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub password_history: Vec<OldPassword>,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, Zeroize)]

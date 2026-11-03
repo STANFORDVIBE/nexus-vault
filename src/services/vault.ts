@@ -62,6 +62,7 @@ export const restoreItem = (id: string) => invoke<void>("restore_item", { id });
 export const deleteItemPermanently = (id: string) =>
   invoke<void>("delete_item_permanently", { id });
 export const emptyTrash = () => invoke<number>("empty_trash");
+export const clearPasswordHistory = (id: string) => invoke<void>("clear_password_history", { id });
 export const revealPassword = (id: string) => invoke<string>("reveal_password", { id });
 export const revealField = (id: string, field: CopyField) =>
   invoke<string>("reveal_field", { id, field });
@@ -79,6 +80,14 @@ export const copyItemField = (id: string, field: CopyField) =>
   invoke<number>("copy_item_field", { id, field });
 export const openItemWebsite = (id: string) => invoke<void>("open_item_website", { id });
 export const openExternalUrl = (url: string) => invoke<void>("open_external_url", { url });
+
+// ---- note images ----
+/** The image goes as a raw body, not JSON; resolves to the attachment id. */
+export const addAttachment = (itemId: string, bytes: Uint8Array) =>
+  invoke<string>("add_attachment", bytes, { headers: { "x-item-id": itemId } });
+/** Raw decrypted bytes: `mime length | mime | image`. */
+export const getAttachment = (id: string) =>
+  invoke<ArrayBuffer | number[]>("get_attachment", { id });
 
 // ---- folders ----
 export const listFolders = () => invoke<FolderView[]>("list_folders");

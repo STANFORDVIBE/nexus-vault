@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { expect, test, type Page } from "@playwright/test";
 
 // `?seed` starts the mock backend locked, with sample items and this password
@@ -53,6 +54,59 @@ test("write a markdown note with autosave", async ({ page }) => {
   await page.getByRole("button", { name: "Готово" }).click();
   await expect(page.locator(".markdown h2")).toHaveText("Дом");
   await expect(page.locator(".markdown code")).toHaveText("home");
+});
+
+test("paste a screenshot into a note and open it full size", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("navigation").getByRole("link", { name: "Заметки" }).click();
+  await page.keyboard.press("Control+Shift+n");
+
+  const editor = page.getByLabel("Текст заметки");
+  await editor.focus();
+  await editor.evaluate(async (textarea) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 180;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#3366aa";
+    ctx.fillRect(0, 0, 320, 180);
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b!), "image/png"),
+    );
+    const data = new DataTransfer();
+    data.items.add(new File([blob], "shot.png", { type: "image/png" }));
+    textarea.dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  });
+
+  // a note with no title yet is saved first, so the image has somewhere to belong
+  await expect(editor).toHaveValue(/!\[картинка\]\(attachment:[0-9a-f-]+\)/);
+  await expect(page.getByLabel("Название")).toHaveValue("Без названия");
+  await expect(
+    page.getByLabel("Картинки в заметке").getByRole("button", { name: "Открыть картинку" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Готово" }).click();
+  await page.locator(".markdown").getByRole("button", { name: "Открыть картинку" }).click();
+  await expect(page.getByRole("dialog").getByRole("img")).toBeVisible();
+});
+
+test("a changed password goes to the history", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("navigation").getByRole("link", { name: "Пароли" }).click();
+  await page.getByRole("listbox", { name: "Записи" }).getByText("GitHub").click();
+  await page.getByRole("button", { name: "Изменить" }).click();
+  await page.getByLabel("Пароль", { exact: true }).fill("brand-new-password-1");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+
+  await page.getByRole("button", { name: "Старые пароли · 1" }).click();
+  await page.getByRole("button", { name: "Показать", exact: true }).click();
+  await expect(page.getByText("gh-s3cret-pass")).toBeVisible();
+
+  await page.getByRole("button", { name: "Очистить историю" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Очистить" }).click();
+  await expect(page.getByRole("button", { name: /Старые пароли/ })).toHaveCount(0);
 });
 
 test("trash, restore and empty the trash", async ({ page }) => {

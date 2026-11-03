@@ -89,6 +89,11 @@ pub async fn delete_item_permanently(state: State<'_, SharedState>, id: String) 
 }
 
 #[tauri::command]
+pub async fn clear_password_history(state: State<'_, SharedState>, id: String) -> AppResult<()> {
+    with_unlocked(&state, |db, vault| vault.clear_password_history(db, &id))
+}
+
+#[tauri::command]
 pub async fn empty_trash(state: State<'_, SharedState>) -> AppResult<usize> {
     with_unlocked(&state, |db, vault| vault.empty_trash(db))
 }

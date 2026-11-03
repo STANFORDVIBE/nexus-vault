@@ -273,6 +273,10 @@ impl Inner {
 
     fn finish_unlock(&mut self, unlocked: UnlockedVault) -> AppResult<VaultStatus> {
         self.settings = Settings::load(self.database()?);
+        if let Some(db) = self.db.as_mut() {
+            // housekeeping only: a failure here must not keep the user out of the vault
+            let _ = unlocked.prune_attachments(db);
+        }
         self.vault = Some(unlocked);
         self.touch();
         self.registry.mark_opened();

@@ -24,6 +24,8 @@ interface MockItem {
   updatedAt: number;
   deletedAt: number | null;
   passwordChangedAt?: number | null;
+  /** Newest first, like the backend. */
+  passwordHistory?: { password: string; replacedAt: number }[];
 }
 
 interface MockFolder {
@@ -63,6 +65,8 @@ export function createMockBackend(options: MockOptions = {}) {
   let state: VaultState = options.state ?? "uninitialized";
   let password = options.password ?? "correct horse battery";
   let items = new Map<string, MockItem>();
+  // note images: raw bytes as stored by Rust (`mime length | mime | image`)
+  const attachments = new Map<string, Uint8Array>();
   let folders = new Map<string, MockFolder>();
   const defaultSettings = (): Settings => ({
     autoLockMinutes: 5,
@@ -207,6 +211,7 @@ export function createMockBackend(options: MockOptions = {}) {
             ? (c.payload.fullName ?? null)
             : (c.payload.content
                 .split("\n")
+                .filter((l) => !l.trimStart().startsWith("!["))
                 .map((l) => l.trim().replace(/^[#>*\s-]+/, ""))
                 .find(Boolean)
                 ?.slice(0, 80) ?? null);
@@ -285,6 +290,7 @@ export function createMockBackend(options: MockOptions = {}) {
           hasPassword: !!pw,
           fields: fields(custom),
           passwordChangedAt: item.passwordChangedAt ?? null,
+          passwordHistory: (item.passwordHistory ?? []).map((h) => ({ replacedAt: h.replacedAt })),
         },
       };
     }
@@ -333,7 +339,11 @@ export function createMockBackend(options: MockOptions = {}) {
     const c = getItem(id).content;
     let value: string | null | undefined = null;
     let secret = false;
-    if (field.startsWith("custom:")) {
+    if (field.startsWith("history:")) {
+      const item = getItem(id);
+      value = item.passwordHistory?.[Number(field.slice(8))]?.password;
+      secret = true;
+    } else if (field.startsWith("custom:")) {
       const f = ("fields" in c.payload ? c.payload.fields : undefined)?.[Number(field.slice(7))];
       value = f?.value;
       secret = !!f?.hidden;
@@ -518,8 +528,13 @@ export function createMockBackend(options: MockOptions = {}) {
       if (i.type !== item.content.type) fail("validation", "validation failed: type");
       validate(i);
       if (item.content.type === "login" && i.type === "login") {
-        if ((item.content.payload.password ?? null) !== (i.payload.password ?? null)) {
-          item.passwordChangedAt = i.payload.password ? now() : null;
+        const old = item.content.payload.password ?? null;
+        const next = i.payload.password ?? null;
+        if (old !== next) {
+          item.passwordChangedAt = next ? now() : null;
+          const history = (item.passwordHistory ?? []).filter((h) => h.password !== next);
+          if (old) history.unshift({ password: old, replacedAt: now() });
+          item.passwordHistory = history.slice(0, 10);
         }
       }
       item.content = { type: i.type, payload: i.payload } as ItemContent;
@@ -564,6 +579,37 @@ export function createMockBackend(options: MockOptions = {}) {
         }
       }
       return count;
+    },
+    clear_password_history: ({ id }) => {
+      requireUnlocked();
+      getItem(id as string).passwordHistory = [];
+    },
+    add_attachment: (body) => {
+      requireUnlocked();
+      const bytes = body as unknown as Uint8Array;
+      const sig = [...bytes.subarray(0, 4)];
+      const mime =
+        sig[0] === 0x89
+          ? "image/png"
+          : sig[0] === 0xff
+            ? "image/jpeg"
+            : sig[0] === 0x47
+              ? "image/gif"
+              : "image/webp";
+      const header = new TextEncoder().encode(mime);
+      const stored = new Uint8Array(1 + header.length + bytes.length);
+      stored[0] = header.length;
+      stored.set(header, 1);
+      stored.set(bytes, 1 + header.length);
+      const id = randomId();
+      attachments.set(id, stored);
+      return id;
+    },
+    get_attachment: ({ id }) => {
+      requireUnlocked();
+      const stored = attachments.get(id as string);
+      if (!stored) return fail("not_found");
+      return stored.slice().buffer;
     },
     reveal_password: ({ id }) => {
       requireUnlocked();

@@ -4,6 +4,7 @@ import {
   CheckIcon,
   CodeIcon,
   HeadingIcon,
+  ImageIcon,
   ItalicIcon,
   LinkIcon,
   ListChecksIcon,
@@ -18,8 +19,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { isImageFile, referencedAttachments, uploadImage } from "@/features/items/attachments";
 import { FolderSelect } from "@/features/items/FolderSelect";
-import { Markdown } from "@/features/items/Markdown";
+import { AttachmentImage, Markdown } from "@/features/items/Markdown";
 import { applyEdit, type Edit, type NoteDraft } from "@/features/items/noteDraft";
 import { TagInput } from "@/features/items/TagInput";
 import { errorMessage } from "@/services/errors";
@@ -70,7 +72,9 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
   const [draft, setDraft] = useState(initial);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [uploading, setUploading] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const idRef = useRef<string | undefined>(itemId);
   const savedRef = useRef({ snapshot: JSON.stringify(initial), favorite: initial.favorite });
@@ -148,15 +152,84 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
     });
   }
 
-  const statusText = !draft.title.trim()
-    ? "Укажите название, чтобы сохранить"
-    : saveState === "saving"
-      ? "Сохраняем…"
-      : saveState === "error"
-        ? "Не сохранено"
-        : saveState === "saved"
-          ? "Сохранено"
-          : "";
+  /** Images belong to a saved note, so a brand-new one is saved first. */
+  async function ensureSaved(): Promise<string> {
+    if (!idRef.current) {
+      const next = { ...draft, title: draft.title.trim() || "Без названия" };
+      setDraft(next);
+      await save(next);
+    }
+    if (!idRef.current) throw new Error("not saved");
+    return idRef.current;
+  }
+
+  async function insertImages(files: File[]) {
+    const images = files.filter(isImageFile);
+    if (images.length === 0) {
+      if (files.length > 0) toast.error("Поддерживаются картинки PNG, JPEG, WebP и GIF");
+      return;
+    }
+    const el = textareaRef.current;
+    const at = el ? el.selectionEnd : draft.content.length;
+    setUploading((n) => n + 1);
+    try {
+      const itemId = await ensureSaved();
+      const parts: string[] = [];
+      for (const file of images) {
+        try {
+          parts.push(await uploadImage(itemId, file));
+        } catch (e) {
+          toast.error(file.name ? `${file.name}: ${errorMessage(e)}` : errorMessage(e));
+        }
+      }
+      if (parts.length === 0) return;
+      setDraft((d) => {
+        const pos = Math.min(at, d.content.length);
+        const before = d.content.slice(0, pos);
+        const after = d.content.slice(pos);
+        const NL = "\n";
+        const block =
+          (before && !before.endsWith(NL) ? NL : "") +
+          parts.join(NL) +
+          (after.startsWith(NL) ? "" : NL);
+        return { ...d, content: (before + block + after).slice(0, MAX_CONTENT) };
+      });
+    } catch {
+      // the save error was already shown
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  }
+
+  function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = [...event.clipboardData.files];
+    if (files.some(isImageFile)) {
+      event.preventDefault();
+      void insertImages(files);
+    }
+  }
+
+  function onDrop(event: React.DragEvent<HTMLTextAreaElement>) {
+    const files = [...event.dataTransfer.files];
+    if (files.length > 0) {
+      event.preventDefault();
+      void insertImages(files);
+    }
+  }
+
+  const images = referencedAttachments(draft.content);
+
+  const statusText = uploading
+    ? "Добавляем картинку…"
+    : !draft.title.trim()
+      ? "Укажите название, чтобы сохранить"
+      : saveState === "saving"
+        ? "Сохраняем…"
+        : saveState === "error"
+          ? "Не сохранено"
+          : saveState === "saved"
+            ? "Сохранено"
+            : "";
 
   return (
     <div className="flex h-full flex-col">
@@ -255,17 +328,55 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
                   <TooltipContent>{label}</TooltipContent>
                 </Tooltip>
               ))}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Картинка"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <ImageIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Картинка — или вставьте скриншот через Ctrl+V</TooltipContent>
+              </Tooltip>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                multiple
+                hidden
+                onChange={(e) => {
+                  void insertImages([...(e.target.files ?? [])]);
+                  e.target.value = "";
+                }}
+              />
             </div>
             <textarea
               ref={textareaRef}
               value={draft.content}
               onChange={(e) => patch({ content: e.target.value.slice(0, MAX_CONTENT) })}
-              placeholder="Текст заметки. Поддерживается Markdown: **жирный**, списки, `код`…"
+              onPaste={onPaste}
+              onDrop={onDrop}
+              placeholder="Текст заметки. Поддерживается Markdown: **жирный**, списки, `код`… Скриншот — Ctrl+V"
               aria-label="Текст заметки"
               autoFocus={!!itemId}
               spellCheck={false}
               className="flex-1 resize-none bg-transparent px-3 py-2.5 font-mono text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
             />
+            {images.length > 0 && (
+              <div
+                aria-label="Картинки в заметке"
+                className="flex flex-wrap gap-2 border-t border-border px-3 py-2"
+              >
+                {images.map((id) => (
+                  <AttachmentImage key={id} id={id} alt="" thumbnail />
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="min-h-80 flex-1 rounded-md border border-border px-4 py-3">
