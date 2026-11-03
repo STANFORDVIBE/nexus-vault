@@ -57,6 +57,7 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   image_too_large: "Картинка слишком большая — не больше 20 МБ",
   too_many_images: "В одной заметке — не больше 200 картинок",
   item: "Сначала сохраните заметку",
+  backup_too_large: "Хранилище больше 2 ГБ — такую копию не получится восстановить",
 };
 
 const MESSAGES: Record<string, string> = {

@@ -5,9 +5,13 @@
 //! MAGIC (8 bytes) | header length (u32 LE) | header JSON | sealed body
 //! ```
 //! The header carries what is needed to unwrap the Vault Key with the master password
-//! (KDF parameters, salt, key envelope). The body is a JSON snapshot of all rows
-//! (whose payloads are already encrypted) sealed again with the Vault Key, using
+//! (KDF parameters, salt, key envelope). The body is a snapshot of all rows (whose
+//! payloads are already encrypted) sealed again with the Vault Key, using
 //! `MAGIC || header` as associated data, so any change to either part is detected.
+//!
+//! Body plaintext since version 3: `JSON length (u32 LE) | JSON | image bytes`. Images
+//! are appended raw, in the order of `attachments` in the JSON, instead of being hex
+//! inside it — that would double their size. Versions 1–2 are plain JSON.
 //!
 //! Restore is atomic: the file is fully verified and written to a new database first,
 //! and only then swapped in place of the current vault.
@@ -33,11 +37,15 @@ use crate::database::Database;
 use crate::database::repo::{self, AttachmentRow, EnvelopeRow, FolderRow, ItemRow, VaultMetaRow};
 
 pub const MAGIC: &[u8; 8] = b"NXVBAK\x00\x01";
-/// 2: note images (`attachments`). Version 1 files are still restored.
-pub const BACKUP_FORMAT_VERSION: u32 = 2;
+/// 2: note images (hex in the JSON). 3: images as raw bytes after the JSON.
+/// Older files are still restored.
+pub const BACKUP_FORMAT_VERSION: u32 = 3;
 pub const EXTENSION: &str = "nexus";
 const MAX_HEADER: usize = 64 * 1024;
-const MAX_BACKUP_SIZE: u64 = 1024 * 1024 * 1024;
+/// Restore reads the whole file into memory; creating refuses to go past this too,
+/// so no copy is ever written that could not be restored.
+const MAX_BACKUP_SIZE: u64 = 2 * 1024 * 1024 * 1024;
+const JSON_LEN_BYTES: usize = 4;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,7 +97,12 @@ struct BackupFolder {
 struct BackupAttachment {
     id: String,
     item_id: String,
-    encrypted_data: String,
+    /// Version 2 only: the ciphertext as hex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    encrypted_data: Option<String>,
+    /// Version 3: length of the ciphertext in the raw section after the JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    length: Option<u64>,
     nonce: String,
     crypto_version: i64,
     created_at: i64,
@@ -147,6 +160,7 @@ pub fn create_backup_bytes(db: &Database, vault_key: &SecretKey) -> AppResult<Ve
     let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
     let envelope = repo::load_envelope(db.conn())?.ok_or(AppError::Integrity)?;
 
+    let rows = repo::load_attachments(db.conn())?;
     let body = Body {
         vault_created_at: meta.created_at,
         folders: repo::load_folders(db.conn())?
@@ -176,20 +190,31 @@ pub fn create_backup_bytes(db: &Database, vault_key: &SecretKey) -> AppResult<Ve
             })
             .collect(),
         settings: repo::load_settings(db.conn())?,
-        attachments: repo::load_attachments(db.conn())?
-            .into_iter()
+        attachments: rows
+            .iter()
             .map(|a| BackupAttachment {
-                id: a.id,
-                item_id: a.item_id,
-                encrypted_data: hex::encode(&a.encrypted_data),
+                id: a.id.clone(),
+                item_id: a.item_id.clone(),
+                encrypted_data: None,
+                length: Some(a.encrypted_data.len() as u64),
                 nonce: hex::encode(&a.nonce),
                 crypto_version: a.crypto_version,
                 created_at: a.created_at,
             })
             .collect(),
     };
-    let body_json =
-        zeroize::Zeroizing::new(serde_json::to_vec(&body).map_err(|_| AppError::Internal)?);
+    let json = serde_json::to_vec(&body).map_err(|_| AppError::Internal)?;
+    let images: usize = rows.iter().map(|a| a.encrypted_data.len()).sum();
+    if (json.len() + images) as u64 > MAX_BACKUP_SIZE - MAX_HEADER as u64 {
+        return Err(AppError::Validation("backup_too_large"));
+    }
+    let mut plain =
+        zeroize::Zeroizing::new(Vec::with_capacity(JSON_LEN_BYTES + json.len() + images));
+    plain.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    plain.extend_from_slice(&json);
+    for row in &rows {
+        plain.extend_from_slice(&row.encrypted_data);
+    }
 
     // The body nonce must be part of the authenticated header, so draw it first.
     let body_nonce: [u8; aead::NONCE_LEN] = crate::crypto::random::bytes()?;
@@ -210,12 +235,8 @@ pub fn create_backup_bytes(db: &Database, vault_key: &SecretKey) -> AppResult<Ve
         body_nonce: hex::encode(&body_nonce),
     };
     let header_bytes = serde_json::to_vec(&header).map_err(|_| AppError::Internal)?;
-    let ciphertext = aead::seal_with_nonce(
-        vault_key,
-        &body_nonce,
-        &body_json,
-        &header_aad(&header_bytes),
-    )?;
+    let ciphertext =
+        aead::seal_with_nonce(vault_key, &body_nonce, &plain, &header_aad(&header_bytes))?;
 
     let mut out = Vec::with_capacity(MAGIC.len() + 4 + header_bytes.len() + ciphertext.len());
     out.extend_from_slice(MAGIC);
@@ -324,14 +345,24 @@ pub fn verify(bytes: &[u8], password: &str) -> AppResult<VerifiedBackup> {
         .map_err(|_| AppError::InvalidBackup)?;
     let vault_key = SecretKey::from_bytes(key_bytes);
 
-    let body_json = aead::open(
+    let plain = aead::open(
         &vault_key,
         &decode(&header.body_nonce)?,
         ciphertext,
         &header_aad(header_bytes),
     )
     .map_err(|_| AppError::InvalidBackup)?;
-    let body: Body = serde_json::from_slice(&body_json).map_err(|_| AppError::InvalidBackup)?;
+    let (body_json, mut raw) = if header.format_version >= 3 {
+        let (len, rest) = plain
+            .split_at_checked(JSON_LEN_BYTES)
+            .ok_or(AppError::InvalidBackup)?;
+        let len = u32::from_le_bytes(len.try_into().map_err(|_| AppError::InvalidBackup)?);
+        rest.split_at_checked(len as usize)
+            .ok_or(AppError::InvalidBackup)?
+    } else {
+        (plain.as_slice(), &[][..])
+    };
+    let body: Body = serde_json::from_slice(body_json).map_err(|_| AppError::InvalidBackup)?;
 
     let folders: Vec<FolderRow> = body
         .folders
@@ -392,8 +423,21 @@ pub fn verify(bytes: &[u8], password: &str) -> AppResult<VerifiedBackup> {
         .attachments
         .into_iter()
         .map(|a| {
+            let encrypted_data = match (a.encrypted_data, a.length) {
+                (Some(hex_data), None) => decode(&hex_data)?,
+                (None, Some(len)) => {
+                    let (data, rest) = raw
+                        .split_at_checked(
+                            usize::try_from(len).map_err(|_| AppError::InvalidBackup)?,
+                        )
+                        .ok_or(AppError::InvalidBackup)?;
+                    raw = rest;
+                    data.to_vec()
+                }
+                _ => return Err(AppError::InvalidBackup),
+            };
             Ok(AttachmentRow {
-                encrypted_data: decode(&a.encrypted_data)?,
+                encrypted_data,
                 nonce: decode(&a.nonce)?,
                 id: a.id,
                 item_id: a.item_id,
@@ -402,6 +446,10 @@ pub fn verify(bytes: &[u8], password: &str) -> AppResult<VerifiedBackup> {
             })
         })
         .collect::<AppResult<_>>()?;
+    if !raw.is_empty() {
+        // bytes nobody accounts for: not a file this app wrote
+        return Err(AppError::InvalidBackup);
+    }
     for attachment in &attachments {
         if !items.iter().any(|i| i.id == attachment.item_id) {
             return Err(AppError::InvalidBackup);
@@ -557,8 +605,8 @@ mod tests {
         assert!(item.favorite);
     }
 
-    #[test]
-    fn note_images_survive_backup_and_restore() {
+    /// The vault from `vault_with_data` plus a note with a 64 KiB "screenshot".
+    fn vault_with_image() -> (Database, UnlockedVault, String, Vec<u8>) {
         use crate::core::model::SecureNotePayload;
         let (mut db, mut v) = vault_with_data();
         let note = v
@@ -573,15 +621,56 @@ mod tests {
                 false,
             )
             .unwrap();
-        let png = b"\x89PNG\r\n\x1a\nscreenshot-bytes";
-        let id = v.add_attachment(&mut db, &note, png).unwrap();
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend((0..64 * 1024).map(|i| (i % 251) as u8));
+        let id = v.add_attachment(&mut db, &note, &png).unwrap();
+        (db, v, id, png)
+    }
 
-        let bytes = create_backup_bytes(&db, &v.key).unwrap();
-        let verified = verify(&bytes, PASSWORD).unwrap();
+    fn restore(bytes: &[u8]) -> (tempfile::TempDir, Database) {
+        let verified = verify(bytes, PASSWORD).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("restored.db");
         write_database(&path, &verified).unwrap();
-        let restored_db = Database::open(&path).unwrap();
+        let db = Database::open(&path).unwrap();
+        (dir, db)
+    }
+
+    /// Rewrites a current backup the way an older app version wrote it: plain JSON
+    /// body, images as hex inside it (version 2) or no images at all (version 1).
+    fn as_older_version(bytes: &[u8], key: &SecretKey, version: u32) -> Vec<u8> {
+        let (mut header, header_bytes, ciphertext) = split(bytes).unwrap();
+        let nonce: [u8; aead::NONCE_LEN] =
+            hex::decode(&header.body_nonce).unwrap().try_into().unwrap();
+        let plain = aead::open(key, &nonce, ciphertext, &header_aad(header_bytes)).unwrap();
+        let len = u32::from_le_bytes(plain[..4].try_into().unwrap()) as usize;
+        let mut body: Body = serde_json::from_slice(&plain[4..4 + len]).unwrap();
+        let mut raw = &plain[4 + len..];
+        for a in &mut body.attachments {
+            let n = a.length.take().unwrap() as usize;
+            a.encrypted_data = Some(hex::encode(&raw[..n]));
+            raw = &raw[n..];
+        }
+        if version == 1 {
+            body.attachments.clear();
+        }
+
+        header.format_version = version;
+        let header_bytes = serde_json::to_vec(&header).unwrap();
+        let json = serde_json::to_vec(&body).unwrap();
+        let sealed = aead::seal_with_nonce(key, &nonce, &json, &header_aad(&header_bytes)).unwrap();
+        let mut out = MAGIC.to_vec();
+        out.extend_from_slice(&(header_bytes.len() as u32).to_le_bytes());
+        out.extend_from_slice(&header_bytes);
+        out.extend_from_slice(&sealed);
+        out
+    }
+
+    #[test]
+    fn note_images_survive_backup_and_restore() {
+        let (db, v, id, png) = vault_with_image();
+        let bytes = create_backup_bytes(&db, &v.key).unwrap();
+        let (_dir, restored_db) = restore(&bytes);
         let restored = vault::unlock(&restored_db, PASSWORD).unwrap();
         assert_eq!(
             &restored.read_attachment(&restored_db, &id).unwrap()[10..],
@@ -590,15 +679,51 @@ mod tests {
     }
 
     #[test]
-    fn version_1_backups_without_images_still_restore() {
-        let (db, v) = vault_with_data();
+    fn images_are_not_inflated_in_the_backup() {
+        let (db, v, _, png) = vault_with_image();
+        let current = create_backup_bytes(&db, &v.key).unwrap();
+        let hex_based = as_older_version(&current, &v.key, 2);
+        // the image itself plus a little overhead, not twice its size
+        assert!(current.len() < png.len() + 8 * 1024, "{}", current.len());
+        assert!(hex_based.len() > 2 * png.len());
+    }
+
+    #[test]
+    fn older_backups_still_restore() {
+        let (db, v, id, png) = vault_with_image();
+        let current = create_backup_bytes(&db, &v.key).unwrap();
+
+        let (_dir, restored_db) = restore(&as_older_version(&current, &v.key, 2));
+        let restored = vault::unlock(&restored_db, PASSWORD).unwrap();
+        assert_eq!(
+            &restored.read_attachment(&restored_db, &id).unwrap()[10..],
+            png
+        );
+
+        let (_dir, restored_db) = restore(&as_older_version(&current, &v.key, 1));
+        let restored = vault::unlock(&restored_db, PASSWORD).unwrap();
+        assert_eq!(restored.items.len(), 2);
+    }
+
+    #[test]
+    fn unaccounted_image_bytes_are_rejected() {
+        let (db, v, _, _) = vault_with_image();
         let bytes = create_backup_bytes(&db, &v.key).unwrap();
-        // a v1 body simply has no "attachments" key; serde fills in an empty list
-        let body: Body =
-            serde_json::from_str(r#"{"vaultCreatedAt":1,"folders":[],"items":[],"settings":[]}"#)
-                .unwrap();
-        assert!(body.attachments.is_empty());
-        assert!(verify(&bytes, PASSWORD).is_ok());
+        let (header, header_bytes, ciphertext) = split(&bytes).unwrap();
+        let nonce: [u8; aead::NONCE_LEN] =
+            hex::decode(&header.body_nonce).unwrap().try_into().unwrap();
+        let mut plain = aead::open(&v.key, &nonce, ciphertext, &header_aad(header_bytes))
+            .unwrap()
+            .to_vec();
+        plain.extend_from_slice(b"smuggled");
+        let sealed =
+            aead::seal_with_nonce(&v.key, &nonce, &plain, &header_aad(header_bytes)).unwrap();
+        let mut forged = bytes[..bytes.len() - ciphertext.len()].to_vec();
+        forged.extend_from_slice(&sealed);
+        assert!(matches!(
+            verify(&forged, PASSWORD),
+            Err(AppError::InvalidBackup)
+        ));
     }
 
     #[test]

@@ -114,8 +114,8 @@ export function AutoBackupSettings({ settings, save }: AutoBackupSettingsProps) 
         label="Автоматические копии"
         description={
           status?.lastAt
-            ? `Последняя — ${formatRelative(status.lastAt)}. Сейчас хранится: ${status.count}`
-            : "Зашифрованная копия делается сама, пока хранилище открыто"
+            ? `Последняя — ${formatRelative(status.lastAt)}. Сейчас хранится: ${status.count}. Если ничего не менялось, новая копия не делается`
+            : "Зашифрованная копия делается сама, пока хранилище открыто и в нём что-то менялось"
         }
         htmlFor="auto-backup"
       >

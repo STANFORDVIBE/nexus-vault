@@ -176,10 +176,10 @@ impl Inner {
         let now = crate::core::time::now_millis();
         let vault = self.vault.as_ref().ok_or(AppError::VaultLocked)?;
         let db = self.db.as_mut().ok_or(AppError::VaultLocked)?;
-        if !force && !auto::is_due(auto::last_backup_at(db), interval, now) {
+        if !force && !auto::is_due(auto::last_checked_at(db), interval, now) {
             return Ok(None);
         }
-        auto::run(&folder, &prefix, keep, db, &vault.key, now).map(Some)
+        auto::run(&folder, &prefix, keep, db, &vault.key, now, force)
     }
 
     /// Locks and closes the current vault, then makes `id` the active one.
