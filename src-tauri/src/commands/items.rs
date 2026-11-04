@@ -6,6 +6,7 @@ use crate::core::error::{AppError, AppResult};
 use crate::core::health::PasswordHealth;
 use crate::core::items::{CopyField, DashboardData, ItemDetail, ItemFilter, ItemSummary};
 use crate::core::model::ItemPayload;
+use crate::crypto::totp::TotpCode;
 use crate::platform::clipboard;
 
 #[derive(Deserialize)]
@@ -178,6 +179,15 @@ pub async fn reveal_field(
     field: CopyField,
 ) -> AppResult<String> {
     with_unlocked(&state, |_, vault| vault.field_value(&id, field))
+}
+
+/// Current two-factor code. Deliberately not counted as activity: the detail pane
+/// refreshes it every period, and that must not keep the vault from auto-locking.
+#[tauri::command]
+pub async fn get_totp_code(state: State<'_, SharedState>, id: String) -> AppResult<TotpCode> {
+    let mut inner = state.lock();
+    let (_, vault) = inner.unlocked()?;
+    vault.totp_code(&id)
 }
 
 /// The full item, secrets included, to fill the edit form.

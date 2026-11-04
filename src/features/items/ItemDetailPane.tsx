@@ -162,6 +162,7 @@ function EditLoader({ item, onDone }: { item: ItemDetail; onDone: (id: string | 
             username: p.username ?? "",
             email: p.email ?? "",
             password: p.password ?? "",
+            totp: p.totp ?? "",
             notes: p.notes ?? "",
             tags: p.tags,
             fields: p.fields ?? [],

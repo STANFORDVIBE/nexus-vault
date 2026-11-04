@@ -49,6 +49,22 @@ jobs:
           npm run lint:rust
           npm run test:rust
 
+  # Known vulnerabilities in dependencies (RustSec and npm advisories).
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: npm audit (runtime dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit --file src-tauri/Cargo.lock
+
   installer:
     needs: check
     if: github.event_name == 'push'

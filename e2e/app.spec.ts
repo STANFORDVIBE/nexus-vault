@@ -187,3 +187,47 @@ test("settings: theme switch persists", async ({ page }) => {
   await page.getByRole("radio", { name: "Тёмная" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
 });
+
+test("two-factor key in a login shows a live code", async ({ page }) => {
+  await unlock(page);
+  await page.keyboard.press("Control+n");
+  await page.getByLabel("Название").fill("Google");
+
+  await page.getByLabel("Ключ 2FA (необязательно)").fill("это не ключ");
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText("Нужен секретный ключ")).toBeVisible();
+
+  await page.getByLabel("Ключ 2FA (необязательно)").fill("JBSW Y3DP EHPK 3PXP");
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText("Пароль сохранён")).toBeVisible();
+  await expect(page.getByText("Код 2FA")).toBeVisible();
+  await expect(page.getByText(/^\d{3} \d{3}$/)).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: /Код сменится через/ })).toBeVisible();
+});
+
+test("leaked passwords are found on the health page", async ({ page }) => {
+  await unlock(page);
+  await page.keyboard.press("Control+n");
+  await page.getByLabel("Название").fill("Старый форум");
+  await page.getByLabel("Пароль", { exact: true }).fill("qwerty");
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText("Пароль сохранён")).toBeVisible();
+
+  await page.getByRole("navigation").getByRole("link", { name: "Проверка паролей" }).click();
+  await page.getByRole("button", { name: "Проверить на утечки" }).click();
+  await expect(page.getByRole("link", { name: /Старый форум.*в утечках/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Проверить ещё раз" })).toBeVisible();
+});
+
+test("import from another password manager", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("link", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Импорт…" }).click();
+  await expect(page.getByText("Импортировано: 1 запись")).toBeVisible();
+  await expect(page.getByText("Формат: Chrome / Edge, уже были в хранилище: 2")).toBeVisible();
+
+  await page.getByRole("navigation").getByRole("link", { name: "Пароли" }).click();
+  await expect(
+    page.getByRole("listbox", { name: "Записи" }).getByText("Импортированный сайт"),
+  ).toBeVisible();
+});

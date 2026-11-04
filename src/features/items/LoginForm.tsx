@@ -33,6 +33,7 @@ function toInput(values: LoginFormValues): ItemInput {
       email: opt(values.email),
       // passwords are stored verbatim: leading/trailing spaces may be intentional
       password: values.password ? values.password : null,
+      totp: opt(values.totp),
       notes: opt(values.notes),
       tags: values.tags,
       fields: cleanFields(values.fields),
@@ -165,6 +166,15 @@ export function LoginForm({ itemId, initial, initialFavorite, onSaved, onCancel 
             </PopoverContent>
           </Popover>
         </div>
+      </Field>
+
+      <Field label="Ключ 2FA (необязательно)" htmlFor="login-totp" error={errors.totp?.message}>
+        <PasswordInput
+          id="login-totp"
+          placeholder="Секретный ключ или ссылка otpauth://"
+          aria-invalid={!!errors.totp}
+          {...register("totp")}
+        />
       </Field>
 
       <Field label="Сайт" htmlFor="login-website" error={errors.website?.message}>

@@ -372,6 +372,77 @@ pub(crate) fn load_contents(
     })
 }
 
+/// What is needed to check a master password, copied out of the database so the slow
+/// Argon2id step can run without holding the application lock.
+pub struct PasswordCheck {
+    meta: VaultMetaRow,
+    envelope: EnvelopeRow,
+}
+
+/// A new key envelope for a master password change, derived but not yet written.
+pub struct NewEnvelope {
+    salt: [u8; SALT_LEN],
+    envelope: EnvelopeRow,
+    params: KdfParams,
+}
+
+pub fn password_check(db: &Database) -> AppResult<PasswordCheck> {
+    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
+    let envelope = repo::load_envelope(db.conn())?.ok_or(AppError::Integrity)?;
+    Ok(PasswordCheck { meta, envelope })
+}
+
+impl PasswordCheck {
+    /// Slow (Argon2id): the Vault Key, or `InvalidPassword`.
+    pub fn unwrap_key(&self, password: &str) -> AppResult<SecretKey> {
+        unwrap_vault_key(&self.meta, &self.envelope, password)
+    }
+
+    /// Slow (two Argon2id runs): checks `current` and wraps the Vault Key under `new`.
+    /// Returns the unwrapped key, to be matched against the open vault on apply.
+    pub fn prepare_change(
+        &self,
+        current: &str,
+        new: &str,
+        params: KdfParams,
+    ) -> AppResult<(SecretKey, NewEnvelope)> {
+        validate_new_master_password(new)?;
+        let key = self.unwrap_key(current)?;
+        let (salt, envelope) = wrap_vault_key(&self.meta.vault_id, &key, new, params)?;
+        Ok((
+            key,
+            NewEnvelope {
+                salt,
+                envelope,
+                params,
+            },
+        ))
+    }
+}
+
+/// The key unwrapped by a password check belongs to this very vault.
+pub fn ensure_same_key(vault: &UnlockedVault, key: &SecretKey) -> AppResult<()> {
+    if key.expose() != vault.key.expose() {
+        return Err(AppError::Integrity);
+    }
+    Ok(())
+}
+
+/// Writes an envelope from [`PasswordCheck::prepare_change`]. Fast: no key derivation.
+pub fn apply_password_change(
+    db: &mut Database,
+    vault: &UnlockedVault,
+    key: &SecretKey,
+    new: NewEnvelope,
+) -> AppResult<()> {
+    ensure_same_key(vault, key)?;
+    let now = now_millis();
+    db.transaction(|tx| {
+        repo::update_kdf(tx, new.params, &new.salt)?;
+        repo::upsert_envelope(tx, &new.envelope, now)
+    })
+}
+
 /// Confirms `password` is the master password of this unlocked vault (used before
 /// sensitive actions such as a plaintext export).
 pub fn check_master_password(
@@ -379,13 +450,8 @@ pub fn check_master_password(
     vault: &UnlockedVault,
     password: &str,
 ) -> AppResult<()> {
-    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
-    let envelope = repo::load_envelope(db.conn())?.ok_or(AppError::Integrity)?;
-    let key = unwrap_vault_key(&meta, &envelope, password)?;
-    if key.expose() != vault.key.expose() {
-        return Err(AppError::Integrity);
-    }
-    Ok(())
+    let key = password_check(db)?.unwrap_key(password)?;
+    ensure_same_key(vault, &key)
 }
 
 /// Re-wraps the Vault Key under a new master password. Items are untouched, so the
@@ -397,20 +463,8 @@ pub fn change_master_password(
     new: &str,
     params: KdfParams,
 ) -> AppResult<()> {
-    validate_new_master_password(new)?;
-    let meta = repo::load_meta(db.conn())?.ok_or(AppError::VaultNotInitialized)?;
-    let envelope = repo::load_envelope(db.conn())?.ok_or(AppError::Integrity)?;
-    let current_key = unwrap_vault_key(&meta, &envelope, current)?;
-    if current_key.expose() != vault.key.expose() {
-        return Err(AppError::Integrity);
-    }
-
-    let (salt, envelope) = wrap_vault_key(&vault.vault_id, &vault.key, new, params)?;
-    let now = now_millis();
-    db.transaction(|tx| {
-        repo::update_kdf(tx, params, &salt)?;
-        repo::upsert_envelope(tx, &envelope, now)
-    })
+    let (key, envelope) = password_check(db)?.prepare_change(current, new, params)?;
+    apply_password_change(db, vault, &key, envelope)
 }
 
 #[cfg(test)]

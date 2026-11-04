@@ -7,6 +7,7 @@
 pub mod app;
 pub mod attachments;
 pub mod backup;
+pub mod breach;
 pub mod folders;
 pub mod generator;
 pub mod hello;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 
 use crate::core::error::{AppError, AppResult};
 use crate::core::state::AppState;
-use crate::core::vault::UnlockedVault;
+use crate::core::vault::{UnlockedVault, ensure_same_key, password_check};
 use crate::database::Database;
 
 pub type SharedState = Arc<AppState>;
@@ -34,6 +35,23 @@ pub(crate) fn with_unlocked<T>(
     inner.touch();
     let (db, vault) = inner.unlocked()?;
     f(db, vault)
+}
+
+/// Checks the master password of the unlocked vault. Blocking (Argon2id), but the app
+/// lock is held only to read and compare, so the window stays responsive meanwhile.
+/// Returns the id of the vault the password was checked against.
+pub(crate) fn verify_master_password(state: &AppState, password: &str) -> AppResult<String> {
+    let check = {
+        let mut inner = state.lock();
+        inner.touch();
+        let (db, _) = inner.unlocked()?;
+        password_check(db)?
+    };
+    let key = check.unwrap_key(password)?;
+    let mut inner = state.lock();
+    let (_, unlocked) = inner.unlocked()?;
+    ensure_same_key(unlocked, &key)?;
+    Ok(unlocked.vault_id.clone())
 }
 
 /// Runs blocking work (Argon2id) on the blocking thread pool.

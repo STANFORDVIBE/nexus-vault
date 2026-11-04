@@ -14,6 +14,9 @@ pub enum AppError {
     VaultLocked,
     #[error("invalid master password")]
     InvalidPassword,
+    /// Several wrong master passwords in a row: wait this many seconds.
+    #[error("too many attempts: {0}")]
+    TooManyAttempts(u64),
     #[error("data integrity check failed")]
     Integrity,
     #[error("not found")]
@@ -35,6 +38,9 @@ pub enum AppError {
     /// No connection to the update server, or the downloaded update did not verify.
     #[error("update failed")]
     UpdateFailed,
+    /// No connection to the leaked password service, or it answered with an error.
+    #[error("network error")]
+    Network,
     #[error("database error")]
     Database(#[source] rusqlite::Error),
     #[error("io error")]
@@ -50,6 +56,7 @@ impl AppError {
             AppError::VaultAlreadyExists => "vault_already_exists",
             AppError::VaultLocked => "vault_locked",
             AppError::InvalidPassword => "invalid_password",
+            AppError::TooManyAttempts(_) => "too_many_attempts",
             AppError::Integrity => "integrity",
             AppError::NotFound => "not_found",
             AppError::Validation(_) => "validation",
@@ -59,6 +66,7 @@ impl AppError {
             AppError::HelloUnavailable => "hello_unavailable",
             AppError::HelloFailed => "hello_failed",
             AppError::UpdateFailed => "update_failed",
+            AppError::Network => "network",
             AppError::Database(_) => "database",
             AppError::Io(_) => "io",
             AppError::Internal => "internal",

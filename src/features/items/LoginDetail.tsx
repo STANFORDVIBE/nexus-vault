@@ -3,6 +3,7 @@ import { ExternalLinkIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { FieldRow, IconAction } from "@/features/items/FieldRow";
 import { PasswordHistory } from "@/features/items/PasswordHistory";
+import { TotpRow } from "@/features/items/TotpRow";
 import { CustomFieldsDetail, NotesBlock } from "@/features/items/TypedDetails";
 import { useCopy } from "@/hooks/useCopy";
 import { errorMessage } from "@/services/errors";
@@ -78,6 +79,7 @@ export function LoginDetail({ id, login, readOnly }: LoginDetailProps) {
         </span>
       </FieldRow>
     ),
+    login.hasTotp && <TotpRow key="totp" id={id} onCopy={copy?.("totp")} />,
     login.website && (
       <FieldRow
         key="website"

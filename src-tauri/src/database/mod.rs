@@ -77,10 +77,12 @@ impl Database {
     }
 
     /// Verifies the file is a healthy SQLite database (used before trusting a vault).
+    /// `quick_check` skips only index-vs-table cross checks, so it stays fast on big
+    /// vaults full of images; ciphertexts are authenticated by AEAD anyway.
     pub fn integrity_check(&self) -> AppResult<bool> {
         let result: String = self
             .conn
-            .query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+            .query_row("PRAGMA quick_check", [], |row| row.get(0))?;
         Ok(result == "ok")
     }
 }

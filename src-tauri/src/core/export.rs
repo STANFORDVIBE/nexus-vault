@@ -138,7 +138,7 @@ pub fn to_csv(vault: &UnlockedVault) -> Zeroizing<String> {
                     p.website.clone().unwrap_or_default(),
                     p.username.clone().unwrap_or_default(),
                     p.password.clone().unwrap_or_default(),
-                    String::new(),
+                    p.totp.clone().unwrap_or_default(),
                 ]);
             }
             other => {

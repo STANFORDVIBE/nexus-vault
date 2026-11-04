@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use tauri::State;
 
-use crate::commands::{SharedState, blocking};
+use crate::commands::{SharedState, blocking, verify_master_password};
 use crate::core::error::{AppError, AppResult};
 use crate::core::state::VaultStatus;
 use crate::core::vault;
@@ -35,12 +35,10 @@ pub async fn get_hello_status(state: State<'_, SharedState>) -> AppResult<HelloS
 
 #[tauri::command]
 pub async fn enable_hello(state: State<'_, SharedState>, password: SecretString) -> AppResult<()> {
-    let vault_id = {
-        let mut inner = state.lock();
-        let (db, unlocked) = inner.unlocked()?;
-        vault::check_master_password(db, unlocked, password.expose_secret())?;
-        unlocked.vault_id.clone()
-    };
+    // Argon2id: on the blocking pool, not on an async worker
+    let verify_state = state.inner().clone();
+    let vault_id =
+        blocking(move || verify_master_password(&verify_state, password.expose_secret())).await?;
     let challenge = vault::new_hello_challenge()?;
     let id = vault_id.clone();
     let signature = blocking(move || {

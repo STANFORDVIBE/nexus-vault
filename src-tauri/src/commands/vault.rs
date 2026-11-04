@@ -49,17 +49,19 @@ pub async fn change_master_password(
 ) -> AppResult<()> {
     let state = state.inner().clone();
     blocking(move || {
+        // Argon2id runs twice here: keep the app lock only for the quick reads and writes
+        let (check, params) = {
+            let mut inner = state.lock();
+            inner.touch();
+            let params = inner.kdf_params;
+            let (db, _) = inner.unlocked()?;
+            (vault::password_check(db)?, params)
+        };
+        let (key, envelope) =
+            check.prepare_change(current.expose_secret(), new.expose_secret(), params)?;
         let mut inner = state.lock();
-        inner.touch();
-        let params = inner.kdf_params;
         let (db, unlocked) = inner.unlocked()?;
-        vault::change_master_password(
-            db,
-            unlocked,
-            current.expose_secret(),
-            new.expose_secret(),
-            params,
-        )
+        vault::apply_password_change(db, unlocked, &key, envelope)
     })
     .await
 }

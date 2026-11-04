@@ -2,6 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   BackupInfo,
+  BreachReport,
   CopyField,
   DashboardData,
   FolderView,
@@ -17,8 +18,10 @@ import type {
   PasswordHealth,
   AutoBackupStatus,
   ExportFormat,
+  ImportSummary,
   RestoreSummary,
   Settings,
+  TotpCode,
   VaultListEntry,
   VaultStatus,
 } from "@/types/vault";
@@ -74,6 +77,8 @@ export const enableHello = (password: string) => invoke<void>("enable_hello", { 
 export const disableHello = () => invoke<void>("disable_hello");
 export const unlockWithHello = () => invoke<VaultStatus>("unlock_with_hello");
 export const getPasswordHealth = () => invoke<PasswordHealth>("get_password_health");
+export const getTotpCode = (id: string) => invoke<TotpCode>("get_totp_code", { id });
+export const checkBreaches = () => invoke<BreachReport>("check_breaches");
 export const getItemForEdit = (id: string) => invoke<ItemContent>("get_item_for_edit", { id });
 /** Copies in Rust; resolves to the auto-clear timeout in seconds (0 = not cleared). */
 export const copyItemField = (id: string, field: CopyField) =>
@@ -119,5 +124,7 @@ export const runAutoBackupNow = () => invoke<string>("run_auto_backup_now");
 export const chooseAutoBackupFolder = () => invoke<string | null>("choose_auto_backup_folder");
 export const openAutoBackupFolder = () => invoke<void>("open_auto_backup_folder");
 /** Unencrypted export; resolves to the file name, or `null` if the dialog was cancelled. */
+/** Resolves to what was imported, or `null` if the dialog was cancelled. */
+export const importItems = () => invoke<ImportSummary | null>("import_items");
 export const exportVault = (password: string, format: ExportFormat) =>
   invoke<string | null>("export_vault", { password, format });

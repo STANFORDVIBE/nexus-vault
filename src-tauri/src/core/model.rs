@@ -68,6 +68,10 @@ pub struct LoginPayload {
     pub email: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    /// Two-factor secret: base32 text or an `otpauth://totp/...` link. Not written when
+    /// empty, so logins without it stay readable by older versions of the app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub totp: Option<String>,
     #[serde(default)]
     pub notes: Option<String>,
     #[serde(default)]
@@ -325,6 +329,10 @@ impl ItemPayload {
                 clean_optional(&mut p.username);
                 clean_optional(&mut p.email);
                 clean_optional(&mut p.notes);
+                clean_optional(&mut p.totp);
+                if let Some(totp) = &p.totp {
+                    crate::crypto::totp::Totp::parse(totp)?;
+                }
                 // passwords are kept verbatim (leading/trailing spaces may be intentional)
                 if p.password.as_deref() == Some("") {
                     p.password = None;

@@ -5,11 +5,11 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::backup::{self, BackupInfo, EXTENSION, RestoreSummary, auto};
-use crate::commands::{SharedState, blocking};
+use crate::commands::{SharedState, blocking, verify_master_password};
 use crate::core::error::{AppError, AppResult};
 use crate::core::export::{self, ExportFormat};
+use crate::core::import::{self, ImportSummary};
 use crate::core::time::{date_stamp, now_millis};
-use crate::core::vault;
 use crate::platform::lock::on_vault_locked;
 
 const FILTER_NAME: &str = "Резервная копия Nexus Vault";
@@ -77,7 +77,7 @@ pub async fn pick_backup_file(
 }
 
 /// Verifies the chosen backup with its master password and atomically replaces the
-/// current vault with it. The replaced vault is kept as `<name>.previous.db`.
+/// current vault with it. The replaced vault is kept as `<name>.previous-<time>.db`.
 #[tauri::command]
 pub async fn restore_backup(
     app: AppHandle,
@@ -102,7 +102,7 @@ pub async fn restore_backup(
             std::fs::create_dir_all(dir)?;
         }
         let staging = backup::sibling(&live, "restore");
-        let previous = backup::sibling(&live, "previous");
+        let previous = backup::sibling(&live, &format!("previous-{}", now_millis()));
         backup::write_database(&staging, &verified)?;
 
         // 3. switch: close the live vault, swap files, reload
@@ -197,13 +197,7 @@ pub async fn export_vault(
 ) -> AppResult<Option<String>> {
     // verify first (slow Argon2id), so a wrong password fails before any dialog
     let verify_state = state.inner().clone();
-    blocking(move || {
-        let mut inner = verify_state.lock();
-        inner.touch();
-        let (db, unlocked) = inner.unlocked()?;
-        vault::check_master_password(db, unlocked, password.expose_secret())
-    })
-    .await?;
+    blocking(move || verify_master_password(&verify_state, password.expose_secret())).await?;
 
     let picked = blocking(move || {
         let name = format!(
@@ -237,6 +231,44 @@ pub async fn export_vault(
         bytes.extend_from_slice(text.as_bytes());
         std::fs::write(&path, &*bytes)?;
         Ok(path.file_name().map(|n| n.to_string_lossy().into_owned()))
+    })
+    .await
+}
+
+/// Adds entries from another password manager's export (CSV) or our own JSON export.
+/// Returns what was imported, or `None` if the dialog was cancelled.
+#[tauri::command]
+pub async fn import_items(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> AppResult<Option<ImportSummary>> {
+    // fail fast if locked, before showing a dialog
+    state.lock().unlocked()?;
+
+    let picked = blocking(move || {
+        Ok(app
+            .dialog()
+            .file()
+            .set_title("Импорт из другого менеджера паролей")
+            .add_filter("CSV или JSON", &["csv", "json"])
+            .blocking_pick_file())
+    })
+    .await?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+
+    let state = state.inner().clone();
+    blocking(move || {
+        if std::fs::metadata(&path)?.len() > import::MAX_IMPORT_BYTES {
+            return Err(AppError::Validation("import_too_large"));
+        }
+        let bytes = zeroize::Zeroizing::new(std::fs::read(&path)?);
+        let parsed = import::parse(&bytes)?;
+        let mut inner = state.lock();
+        inner.touch();
+        let (db, vault) = inner.unlocked()?;
+        vault.import(db, parsed).map(Some)
     })
     .await
 }

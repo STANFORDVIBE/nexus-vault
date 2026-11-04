@@ -546,15 +546,25 @@ pub fn remove_db_files(path: &Path) -> AppResult<()> {
 
 /// Swaps `new_db` into `live_db`, keeping the replaced vault as `previous_db`.
 /// The live database must be closed (and checkpointed) by the caller.
+/// `previous_db` must be a fresh name: an existing file there is never overwritten,
+/// so restoring twice in a row cannot destroy the vault kept by the first restore.
 pub fn swap_in(new_db: &Path, live_db: &Path, previous_db: &Path) -> AppResult<()> {
-    remove_db_files(previous_db)?;
-    if live_db.exists() {
+    if previous_db.exists() {
+        return Err(AppError::Internal);
+    }
+    let had_live = live_db.exists();
+    if had_live {
         fs::rename(live_db, previous_db)?;
     }
     for suffix in ["-wal", "-shm"] {
         let _ = fs::remove_file(sidecar(live_db, suffix));
     }
-    fs::rename(new_db, live_db)?;
+    fs::rename(new_db, live_db).inspect_err(|_| {
+        // put the old vault back: the user must never be left without a vault file
+        if had_live {
+            let _ = fs::rename(previous_db, live_db);
+        }
+    })?;
     Ok(())
 }
 
@@ -791,6 +801,39 @@ mod tests {
         assert_eq!(fs::read(&live).unwrap(), b"new");
         assert_eq!(fs::read(&previous).unwrap(), b"old");
         assert!(!new.exists());
+    }
+
+    #[test]
+    fn second_restore_keeps_the_first_previous_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("vault.db");
+        let first = dir.path().join("vault.previous-1.db");
+        let second = dir.path().join("vault.previous-2.db");
+        fs::write(&live, b"original").unwrap();
+        fs::write(dir.path().join("a.db"), b"wrong backup").unwrap();
+        swap_in(&dir.path().join("a.db"), &live, &first).unwrap();
+        fs::write(dir.path().join("b.db"), b"right backup").unwrap();
+        swap_in(&dir.path().join("b.db"), &live, &second).unwrap();
+        assert_eq!(fs::read(&first).unwrap(), b"original");
+        assert_eq!(fs::read(&second).unwrap(), b"wrong backup");
+        assert_eq!(fs::read(&live).unwrap(), b"right backup");
+        // an existing file under the "previous" name is never overwritten
+        fs::write(dir.path().join("c.db"), b"x").unwrap();
+        assert!(swap_in(&dir.path().join("c.db"), &live, &first).is_err());
+        assert_eq!(fs::read(&first).unwrap(), b"original");
+        assert_eq!(fs::read(&live).unwrap(), b"right backup");
+    }
+
+    #[test]
+    fn failed_swap_puts_the_live_vault_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("vault.db");
+        let previous = dir.path().join("vault.previous-1.db");
+        fs::write(&live, b"old").unwrap();
+        // the new database is missing, so the second rename fails
+        assert!(swap_in(&dir.path().join("missing.db"), &live, &previous).is_err());
+        assert_eq!(fs::read(&live).unwrap(), b"old");
+        assert!(!previous.exists());
     }
 
     #[test]

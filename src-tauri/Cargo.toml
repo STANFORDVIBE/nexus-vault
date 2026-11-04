@@ -38,6 +38,12 @@ tauri-plugin-dialog = "2.8.4"
 tauri-plugin-opener = "2.7.2"
 arboard = "3.7.0"
 sha2 = "0.11.1"
+# TOTP codes (RFC 6238) and the leaked-password check (HIBP works with SHA-1 hashes)
+sha1 = "0.11"
+hmac = "0.13"
+# HTTPS for the leaked-password check; the same client and TLS stack the updater uses
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_RemoteDesktop", "Foundation", "Security_Credentials", "Security_Cryptography", "Storage_Streams"] }
 tauri-plugin-updater = "2.14.1"
 

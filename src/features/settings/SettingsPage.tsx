@@ -27,6 +27,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { AutoBackupSettings } from "@/features/backup/AutoBackupSettings";
 import { ExportVault } from "@/features/backup/ExportVault";
+import { ImportItems } from "@/features/backup/ImportItems";
 import { RestoreBackup } from "@/features/backup/RestoreBackup";
 import { ChangeMasterPassword } from "@/features/settings/ChangeMasterPassword";
 import { HelloSettings } from "@/features/settings/HelloSettings";
@@ -284,7 +285,7 @@ export function SettingsPage() {
         </SettingsRow>
         <SettingsRow
           label="Восстановить из копии"
-          description="Текущее хранилище будет заменено. Предыдущая версия сохранится рядом"
+          description="Текущее хранилище будет заменено. Предыдущая версия сохранится рядом отдельным файлом"
         >
           <RestoreBackup />
         </SettingsRow>
@@ -293,6 +294,12 @@ export function SettingsPage() {
           description="Незашифрованный файл CSV или JSON — чтобы перенести данные в другой менеджер паролей"
         >
           <ExportVault />
+        </SettingsRow>
+        <SettingsRow
+          label="Импорт"
+          description="Из Bitwarden, Chrome, Edge, Firefox, KeePass, 1Password (CSV) или из JSON-экспорта Nexus Vault. Записи добавляются, ничего не перезаписывается, дубли пропускаются"
+        >
+          <ImportItems />
         </SettingsRow>
       </Section>
 

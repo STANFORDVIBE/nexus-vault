@@ -1,3 +1,5 @@
+import type { ImportSummary } from "@/types/vault";
+
 const relative = new Intl.RelativeTimeFormat("ru", { numeric: "auto" });
 const dateTime = new Intl.DateTimeFormat("ru", { dateStyle: "medium", timeStyle: "short" });
 const dateOnly = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
@@ -36,3 +38,21 @@ export function plural(n: number, forms: readonly [string, string, string]): str
 }
 
 export const ITEMS_FORMS = ["запись", "записи", "записей"] as const;
+
+/** `123456` -> `123 456`, the way authenticator apps show codes. */
+export function groupCode(code: string): string {
+  const half = Math.ceil(code.length / 2);
+  return `${code.slice(0, half)} ${code.slice(half)}`;
+}
+
+/** "Импортировано 12 записей (Bitwarden). Уже были: 3." */
+export function importMessage(s: ImportSummary): { title: string; description?: string } {
+  const title =
+    s.imported > 0
+      ? `Импортировано: ${s.imported} ${plural(s.imported, ["запись", "записи", "записей"])}`
+      : "Новых записей нет";
+  const notes = [`Формат: ${s.format}`];
+  if (s.duplicates > 0) notes.push(`уже были в хранилище: ${s.duplicates}`);
+  if (s.skipped > 0) notes.push(`не удалось прочитать: ${s.skipped}`);
+  return { title, description: notes.join(", ") };
+}

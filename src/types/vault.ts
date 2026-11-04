@@ -48,6 +48,8 @@ export interface LoginPayload {
   username?: string | null;
   email?: string | null;
   password?: string | null;
+  /** Two-factor secret: base32 or an `otpauth://totp/` link. */
+  totp?: string | null;
   notes?: string | null;
   tags: string[];
   fields?: CustomField[];
@@ -116,6 +118,7 @@ export interface LoginView {
   notes: string | null;
   tags: string[];
   hasPassword: boolean;
+  hasTotp: boolean;
   fields: FieldView[];
   passwordChangedAt: number | null;
   /** Previous passwords, newest first: only when each was replaced. */
@@ -187,6 +190,7 @@ export type CopyField =
   | "card_pin"
   | "cardholder"
   | "doc_number"
+  | "totp"
   | `custom:${number}`
   | `history:${number}`;
 
@@ -283,6 +287,29 @@ export interface BackupInfo {
   fileName: string;
   createdAt: number;
   sizeBytes: number;
+}
+
+export interface TotpCode {
+  code: string;
+  /** Seconds a code lives (usually 30). */
+  period: number;
+  /** Seconds the current code stays valid. */
+  remaining: number;
+}
+
+export interface ImportSummary {
+  /** Recognised source: "Bitwarden", "Chrome / Edge", "KeePass", ... */
+  format: string;
+  imported: number;
+  duplicates: number;
+  skipped: number;
+}
+
+export interface BreachReport {
+  /** Logins with a password. */
+  checked: number;
+  /** Logins whose password is in known leaks; `count` = times seen. */
+  breached: { item: ItemSummary; count: number }[];
 }
 
 export interface RestoreSummary {

@@ -1,6 +1,6 @@
 import { applyEdit } from "@/features/items/noteDraft";
 import { newItemBase } from "@/hooks/useAppHotkeys";
-import { formatBytes, plural, ITEMS_FORMS } from "@/lib/format";
+import { formatBytes, groupCode, importMessage, plural, ITEMS_FORMS } from "@/lib/format";
 import { estimateStrength } from "@/lib/password-strength";
 import { errorMessage } from "@/services/errors";
 
@@ -80,5 +80,29 @@ describe("errorMessage", () => {
       "Папка с таким названием уже есть",
     );
     expect(errorMessage(new Error("boom"))).toBe("Что-то пошло не так");
+    expect(errorMessage({ code: "too_many_attempts", message: "too many attempts: 8" })).toBe(
+      "Слишком много неверных попыток — подождите 8 с",
+    );
+  });
+});
+
+describe("groupCode", () => {
+  it("splits codes in two halves like authenticator apps", () => {
+    expect(groupCode("123456")).toBe("123 456");
+    expect(groupCode("12345678")).toBe("1234 5678");
+  });
+});
+
+describe("importMessage", () => {
+  it("reports imported, duplicate and skipped entries", () => {
+    expect(importMessage({ format: "Bitwarden", imported: 12, duplicates: 3, skipped: 1 })).toEqual(
+      {
+        title: "Импортировано: 12 записей",
+        description: "Формат: Bitwarden, уже были в хранилище: 3, не удалось прочитать: 1",
+      },
+    );
+    expect(importMessage({ format: "CSV", imported: 0, duplicates: 5, skipped: 0 }).title).toBe(
+      "Новых записей нет",
+    );
   });
 });

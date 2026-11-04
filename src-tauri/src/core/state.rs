@@ -57,6 +57,10 @@ pub struct Inner {
     pub kdf_params: KdfParams,
     /// Backup file chosen in the restore dialog, waiting for its password.
     pub pending_restore: Option<PathBuf>,
+    /// Wrong master passwords in a row, and when the next attempt is allowed.
+    /// shortcut: kept in memory only, a restart resets it; persist it if that matters.
+    failed_unlocks: u32,
+    retry_at: Option<Instant>,
 }
 
 impl AppState {
@@ -71,6 +75,8 @@ impl AppState {
             last_activity: Instant::now(),
             kdf_params: KdfParams::DEFAULT,
             pending_restore: None,
+            failed_unlocks: 0,
+            retry_at: None,
         };
         if let Ok(db) = inner.database() {
             inner.settings = Settings::load(db);
@@ -242,12 +248,25 @@ impl Inner {
         if self.vault.is_some() {
             return Ok(self.status());
         }
+        if let Some(retry_at) = self.retry_at {
+            let wait = retry_at.saturating_duration_since(Instant::now());
+            if !wait.is_zero() {
+                return Err(AppError::TooManyAttempts(wait.as_secs_f64().ceil() as u64));
+            }
+        }
         let db = self.database()?;
         if !db.integrity_check()? {
             return Err(AppError::Integrity);
         }
-        let unlocked = vault::unlock(db, password)?;
-        self.finish_unlock(unlocked)
+        match vault::unlock(db, password) {
+            Ok(unlocked) => self.finish_unlock(unlocked),
+            Err(AppError::InvalidPassword) => {
+                self.failed_unlocks += 1;
+                self.retry_at = Some(Instant::now() + unlock_delay(self.failed_unlocks));
+                Err(AppError::InvalidPassword)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     /// Unlock with a Windows Hello signature of the challenge read for `vault_id`.
@@ -272,6 +291,8 @@ impl Inner {
     }
 
     fn finish_unlock(&mut self, unlocked: UnlockedVault) -> AppResult<VaultStatus> {
+        self.failed_unlocks = 0;
+        self.retry_at = None;
         self.settings = Settings::load(self.database()?);
         if let Some(db) = self.db.as_mut() {
             // housekeeping only: a failure here must not keep the user out of the vault
@@ -304,6 +325,16 @@ impl Inner {
         let db = self.db.as_mut().ok_or(AppError::VaultLocked)?;
         Ok((db, vault))
     }
+}
+
+/// Pause after `failures` wrong master passwords in a row: none for the first two typos,
+/// then 2, 4, 8 ... seconds, at most a minute. Makes guessing through the app pointless.
+fn unlock_delay(failures: u32) -> std::time::Duration {
+    let secs = match failures {
+        0..=2 => 0,
+        n => (1u64 << (n - 2).min(6)).min(60),
+    };
+    std::time::Duration::from_secs(secs)
 }
 
 /// `vault.db` -> `vault.forgotten-<millis>.db`, next to the original.
@@ -354,6 +385,35 @@ mod tests {
         // A fresh process sees a locked vault
         let reopened = AppState::for_tests(path);
         assert_eq!(reopened.lock().status().state, VaultState::Locked);
+    }
+
+    #[test]
+    fn wrong_passwords_in_a_row_slow_down_unlocking() {
+        assert_eq!(unlock_delay(1).as_secs(), 0);
+        assert_eq!(unlock_delay(2).as_secs(), 0);
+        assert_eq!(unlock_delay(3).as_secs(), 2);
+        assert_eq!(unlock_delay(4).as_secs(), 4);
+        assert_eq!(unlock_delay(20).as_secs(), 60);
+
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::for_tests(dir.path().join("vault.db"));
+        let mut inner = state.lock();
+        inner.create_vault("correct horse battery").unwrap();
+        inner.lock_vault();
+        for _ in 0..3 {
+            assert!(matches!(
+                inner.unlock("wrong password!"),
+                Err(AppError::InvalidPassword)
+            ));
+        }
+        // even the right password waits until the pause is over
+        assert!(matches!(
+            inner.unlock("correct horse battery"),
+            Err(AppError::TooManyAttempts(2))
+        ));
+        inner.retry_at = None;
+        inner.unlock("correct horse battery").unwrap();
+        assert_eq!(inner.failed_unlocks, 0);
     }
 
     #[test]

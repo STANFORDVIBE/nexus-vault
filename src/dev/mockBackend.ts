@@ -277,7 +277,7 @@ export function createMockBackend(options: MockOptions = {}) {
       list.map((f) => ({ label: f.label, hidden: f.hidden, value: f.hidden ? null : f.value }));
     const c = item.content;
     if (c.type === "login") {
-      const { password: pw, fields: custom, ...rest } = c.payload;
+      const { password: pw, totp, fields: custom, ...rest } = c.payload;
       return {
         ...base,
         type: "login",
@@ -288,6 +288,7 @@ export function createMockBackend(options: MockOptions = {}) {
           notes: null,
           ...rest,
           hasPassword: !!pw,
+          hasTotp: !!totp,
           fields: fields(custom),
           passwordChangedAt: item.passwordChangedAt ?? null,
           passwordHistory: (item.passwordHistory ?? []).map((h) => ({ replacedAt: h.replacedAt })),
@@ -362,12 +363,25 @@ export function createMockBackend(options: MockOptions = {}) {
       } as Record<string, string | null | undefined>;
       value = map[field];
       secret = field !== "cardholder";
+    } else if (c.type === "login" && field === "totp") {
+      value = c.payload.totp ? mockTotp().code : null;
+      secret = true;
     } else if (c.type === "identity" && field === "doc_number") {
       value = c.payload.number;
       secret = true;
     }
     if (!value) return fail("not_found");
     return { value, secret };
+  }
+
+  /** A stable fake code per 30-second window (real TOTP math lives in Rust). */
+  function mockTotp() {
+    const step = Math.floor(Date.now() / 30_000);
+    return {
+      code: String((step * 7919) % 1_000_000).padStart(6, "0"),
+      period: 30,
+      remaining: 30 - (Math.floor(Date.now() / 1000) % 30),
+    };
   }
 
   function generate(o: GeneratorOptions) {
@@ -627,6 +641,49 @@ export function createMockBackend(options: MockOptions = {}) {
     get_item_for_edit: ({ id }) => {
       requireUnlocked();
       return structuredClone(getItem(id as string).content);
+    },
+    get_totp_code: ({ id }) => {
+      requireUnlocked();
+      const c = getItem(id as string).content;
+      if (c.type !== "login" || !c.payload.totp) return fail("not_found");
+      return mockTotp();
+    },
+    check_breaches: () => {
+      requireUnlocked();
+      const logins = [...items.values()].filter(
+        (i) => i.deletedAt === null && i.content.type === "login" && i.content.payload.password,
+      );
+      const leaked = new Set(["password", "123456", "qwerty", "12345678", "111111"]);
+      const pw = (i: MockItem) => (i.content.payload as { password?: string | null }).password!;
+      return {
+        checked: logins.length,
+        breached: logins
+          .filter((i) => leaked.has(pw(i).toLowerCase()) || pw(i).length < 6)
+          .map((i) => ({ item: summary(i), count: 24_230 })),
+      };
+    },
+    import_items: () => {
+      requireUnlocked();
+      const id = randomId();
+      items.set(id, {
+        id,
+        content: {
+          type: "login",
+          payload: {
+            title: "Импортированный сайт",
+            website: "https://imported.example",
+            username: "me",
+            password: "imported-password-1",
+            tags: [],
+          },
+        },
+        folderId: null,
+        favorite: false,
+        createdAt: now(),
+        updatedAt: now(),
+        deletedAt: null,
+      });
+      return { format: "Chrome / Edge", imported: 1, duplicates: 2, skipped: 0 };
     },
     copy_item_field: ({ id, field }) => {
       requireUnlocked();

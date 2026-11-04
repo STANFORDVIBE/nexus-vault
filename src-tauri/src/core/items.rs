@@ -11,6 +11,7 @@ use crate::core::error::{AppError, AppResult};
 use crate::core::model::{CustomField, ItemPayload, ItemType, LoginPayload, OldPassword};
 use crate::core::time::now_millis;
 use crate::core::vault::{UnlockedVault, VaultItem, encode_payload, item_aad};
+use crate::crypto::totp::{Totp, TotpCode};
 use crate::crypto::{CRYPTO_VERSION, aead, random};
 use crate::database::Database;
 use crate::database::repo::{self, ItemRow};
@@ -86,6 +87,7 @@ pub enum ItemContentView {
         notes: Option<String>,
         tags: Vec<String>,
         has_password: bool,
+        has_totp: bool,
         fields: Vec<FieldView>,
         password_changed_at: Option<i64>,
         password_history: Vec<OldPasswordView>,
@@ -189,6 +191,8 @@ pub enum CopyField {
     Custom(usize),
     /// A previous login password, by index in the history (0 = most recent).
     OldPassword(usize),
+    /// The current two-factor code (not the secret itself).
+    Totp,
 }
 
 impl CopyField {
@@ -204,6 +208,7 @@ impl CopyField {
             "card_pin" => CopyField::CardPin,
             "cardholder" => CopyField::Cardholder,
             "doc_number" => CopyField::DocNumber,
+            "totp" => CopyField::Totp,
             other => match other.split_once(':')? {
                 ("custom", index) => CopyField::Custom(index.parse().ok()?),
                 ("history", index) => CopyField::OldPassword(index.parse().ok()?),
@@ -241,6 +246,10 @@ pub struct DashboardData {
 }
 
 // ---- helpers --------------------------------------------------------------------------
+
+fn now_secs() -> u64 {
+    u64::try_from(now_millis() / 1000).unwrap_or(0)
+}
 
 fn host_of(url: &str) -> String {
     let without_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -318,6 +327,7 @@ fn detail(item: &VaultItem) -> ItemDetail {
             notes: p.notes.clone(),
             tags: p.tags.clone(),
             has_password: p.password.is_some(),
+            has_totp: p.totp.is_some(),
             fields: field_views(&p.fields),
             password_changed_at: p.password_changed_at,
             password_history: p
@@ -463,7 +473,7 @@ impl UnlockedVault {
         }
     }
 
-    fn seal_payload(&self, id: &str, payload: &ItemPayload) -> AppResult<aead::Sealed> {
+    pub(crate) fn seal_payload(&self, id: &str, payload: &ItemPayload) -> AppResult<aead::Sealed> {
         let plain = encode_payload(payload)?;
         aead::seal(
             &self.key,
@@ -567,6 +577,10 @@ impl UnlockedVault {
             (ItemPayload::Card(p), CopyField::CardPin) => secret(&p.pin),
             (ItemPayload::Card(p), CopyField::Cardholder) => public(&p.cardholder),
             (ItemPayload::Identity(p), CopyField::DocNumber) => secret(&p.number),
+            (ItemPayload::Login(p), CopyField::Totp) => match &p.totp {
+                Some(totp) => Some((Totp::parse(totp)?.code_at(now_secs()).code, true)),
+                None => None,
+            },
             (ItemPayload::Login(p), CopyField::OldPassword(index)) => p
                 .password_history
                 .get(index)
@@ -579,6 +593,16 @@ impl UnlockedVault {
         };
         let (value, secret) = found.ok_or(AppError::NotFound)?;
         Ok(FieldValue { value, secret })
+    }
+
+    /// The current two-factor code of a login, with the seconds it stays valid.
+    pub fn totp_code(&self, id: &str) -> AppResult<TotpCode> {
+        match &self.item(id)?.payload {
+            ItemPayload::Login(LoginPayload {
+                totp: Some(totp), ..
+            }) => Ok(Totp::parse(totp)?.code_at(now_secs())),
+            _ => Err(AppError::NotFound),
+        }
     }
 
     pub fn field_value(&self, id: &str, field: CopyField) -> AppResult<String> {
@@ -819,6 +843,47 @@ mod tests {
             tags: vec!["work".into()],
             ..Default::default()
         })
+    }
+
+    #[test]
+    fn two_factor_codes_come_from_the_stored_secret() {
+        let (mut db, mut vault) = setup();
+        let with_totp = |totp: &str| {
+            let mut payload = login("GitHub", "me", "pw");
+            if let ItemPayload::Login(p) = &mut payload {
+                p.totp = Some(totp.into());
+            }
+            payload
+        };
+        assert!(matches!(
+            vault.create_item(&mut db, with_totp("not a secret!"), None, false),
+            Err(AppError::Validation("totp"))
+        ));
+        let id = vault
+            .create_item(
+                &mut db,
+                with_totp(" GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ "),
+                None,
+                false,
+            )
+            .unwrap();
+        let code = vault.totp_code(&id).unwrap();
+        assert_eq!(code.code.len(), 6);
+        assert!(code.code.chars().all(|c| c.is_ascii_digit()));
+        let copied = vault.field(&id, CopyField::Totp).unwrap();
+        assert!(copied.secret);
+        assert!(matches!(
+            vault.get_item(&id).unwrap().content,
+            ItemContentView::Login { has_totp: true, .. }
+        ));
+        // survives a lock / unlock cycle
+        let reopened = vault::unlock(&db, PASSWORD).unwrap();
+        assert!(reopened.totp_code(&id).is_ok());
+
+        let plain = vault
+            .create_item(&mut db, login("Plain", "me", "pw"), None, false)
+            .unwrap();
+        assert!(matches!(vault.totp_code(&plain), Err(AppError::NotFound)));
     }
 
     fn note(title: &str, content: &str) -> ItemPayload {

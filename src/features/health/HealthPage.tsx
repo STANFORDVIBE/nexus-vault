@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import {
   CopyIcon,
   HistoryIcon,
+  SearchCheckIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
   ShieldIcon,
@@ -12,11 +13,13 @@ import { cn } from "cn";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ItemAvatar } from "@/components/common/ItemAvatar";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useVaultQuery } from "@/hooks/useVaultQuery";
 import { plural } from "@/lib/format";
-import { getPasswordHealth } from "@/services/vault";
-import type { ItemSummary } from "@/types/vault";
+import { errorMessage } from "@/services/errors";
+import { checkBreaches, getPasswordHealth } from "@/services/vault";
+import type { BreachReport, ItemSummary } from "@/types/vault";
 
 const LEVEL_LABELS = ["Очень слабый", "Слабый"];
 const PASSWORDS = ["пароль", "пароля", "паролей"] as const;
@@ -86,13 +89,81 @@ function Section({
   );
 }
 
+/** "24 230 раз" with a thin space, like the rest of the app's numbers. */
+function times(count: number): string {
+  return `${count.toLocaleString("ru-RU")} ${plural(count, ["раз", "раза", "раз"])}`;
+}
+
+/** On-demand check against Have I Been Pwned: only a 5-character hash prefix is sent. */
+function BreachCheck() {
+  const [report, setReport] = useState<BreachReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    try {
+      setReport(await checkBreaches());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="gap-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <SearchCheckIcon className="size-4 text-muted-foreground" />
+          Утечки
+          {report && (
+            <span className="ml-auto text-xs font-normal text-muted-foreground tabular-nums">
+              {report.breached.length}
+            </span>
+          )}
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Сверка с базой утёкших паролей Have I Been Pwned. В интернет уходят только первые 5
+          символов хеша каждого пароля — ни пароли, ни их полные хеши не отправляются
+        </p>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {report &&
+          (report.breached.length === 0 ? (
+            <p className="px-2 py-2 text-sm text-muted-foreground">
+              {`Проверено ${report.checked} ${plural(report.checked, PASSWORDS)} — ни один не найден в утечках`}
+            </p>
+          ) : (
+            <div className="flex flex-col">
+              {report.breached.map((b) => (
+                <ItemRow
+                  key={b.item.id}
+                  item={b.item}
+                  note={<span className="text-destructive">{`в утечках ${times(b.count)}`}</span>}
+                />
+              ))}
+            </div>
+          ))}
+        {error && <p className="px-2 text-sm text-destructive">{error}</p>}
+        <div>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => void run()}>
+            {busy ? "Проверяю…" : report ? "Проверить ещё раз" : "Проверить на утечки"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function HealthPage() {
   const { data } = useVaultQuery("health", getPasswordHealth);
 
   const header = (
     <PageHeader
       title="Проверка паролей"
-      description="Проверка идёт только на этом компьютере: пароли никуда не отправляются"
+      description="Проверка идёт на этом компьютере: пароли никуда не отправляются"
     />
   );
 
@@ -202,6 +273,8 @@ export function HealthPage() {
               <ItemRow key={o.item.id} item={o.item} note={ages(o.ageDays)} />
             ))}
           </Section>
+
+          <BreachCheck />
         </div>
       )}
     </div>

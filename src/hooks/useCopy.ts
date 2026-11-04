@@ -17,6 +17,7 @@ const FIELD_LABELS: Record<NamedField, string> = {
   card_pin: "PIN",
   cardholder: "Держатель",
   doc_number: "Номер документа",
+  totp: "Код 2FA",
 };
 
 function notify(label: string, clearAfter: number) {

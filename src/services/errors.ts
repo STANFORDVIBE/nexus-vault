@@ -57,6 +57,10 @@ const VALIDATION_MESSAGES: Record<string, string> = {
   image_too_large: "Картинка слишком большая — не больше 20 МБ",
   too_many_images: "В одной заметке — не больше 200 картинок",
   item: "Сначала сохраните заметку",
+  totp: "Ключ 2FA не распознан — нужен секретный ключ или ссылка otpauth://",
+  import_format:
+    "Не удалось распознать файл — нужен CSV-экспорт менеджера паролей или JSON-экспорт Nexus Vault",
+  import_too_large: "Файл слишком большой для импорта",
   backup_too_large: "Хранилище больше 2 ГБ — такую копию не получится восстановить",
 };
 
@@ -70,6 +74,7 @@ const MESSAGES: Record<string, string> = {
   unsupported_version: "Файл создан более новой версией Nexus Vault",
   invalid_backup: "Файл повреждён или не является резервной копией Nexus Vault",
   cancelled: "Операция отменена",
+  network: "Нет связи с сервисом проверки утечек — проверьте интернет и попробуйте позже",
   update_failed: "Не удалось получить обновление — проверьте интернет и попробуйте позже",
   hello_unavailable: "Windows Hello недоступен — войдите мастер-паролем",
   hello_failed:
@@ -85,6 +90,10 @@ export function errorMessage(error: unknown): string {
     if (error.code === "validation") {
       const field = error.message.replace("validation failed: ", "");
       return VALIDATION_MESSAGES[field] ?? "Проверьте введённые данные";
+    }
+    if (error.code === "too_many_attempts") {
+      const seconds = /\d+/.exec(error.message)?.[0] ?? "несколько";
+      return `Слишком много неверных попыток — подождите ${seconds} с`;
     }
     return MESSAGES[error.code] ?? "Что-то пошло не так";
   }
