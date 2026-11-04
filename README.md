@@ -31,16 +31,6 @@
 При удалении можно отметить «Удалить хранилища, автокопии и настройки» — по умолчанию
 данные остаются.
 
-Сборка релиза (подписанный установщик + `latest.json` для обновлений):
-
-```bash
-powershell -ExecutionPolicy Bypass -File scripts/build-release.ps1
-```
-
-Ключ подписи лежит вне проекта: `%USERPROFILE%\.tauri\nexus-vault.key`. Без него
-нельзя выпустить обновление — сохраните его копию. Файлы из
-`src-tauri/target/release/bundle/nsis/` загружаются в релиз GitHub с тегом `v<версия>`.
-
 ## Разработка
 
 Нужны Node.js 20.19+, Rust (stable, MSVC), Visual Studio Build Tools 2022 (C++ и Windows SDK).
@@ -52,11 +42,9 @@ npm run tauri dev
 
 Проверки: `npm run check` (типы, линтеры, тесты фронтенда и Rust) и `npm run e2e`
 (сценарии в Microsoft Edge). Интерфейс без Rust: `npm run dev` и открыть
-`http://localhost:1420/?seed` — подключится фейковый бэкенд с тестовыми данными
-(пароль `correct horse battery`).
+`http://localhost:1420/?seed` — подключится фейковый бэкенд с тестовыми данными.
 
 ## Документация
 
 - [docs/SECURITY.md](docs/SECURITY.md) — что защищено и что нет
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — устройство и замеры производительности
-- [PROJECT_SPEC.md](PROJECT_SPEC.md) — техническое задание
