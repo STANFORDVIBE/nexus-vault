@@ -121,6 +121,7 @@ pub fn run() {
             commands::items::open_external_url,
             commands::attachments::add_attachment,
             commands::attachments::get_attachment,
+            commands::attachments::save_attachment,
             commands::folders::list_folders,
             commands::folders::create_folder,
             commands::folders::rename_folder,

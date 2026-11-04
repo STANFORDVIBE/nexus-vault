@@ -83,6 +83,7 @@ test("paste a screenshot into a note and open it full size", async ({ page }) =>
   // a note with no title yet is saved first, so the image has somewhere to belong
   await expect(editor).toHaveValue(/!\[картинка\]\(attachment:[0-9a-f-]+\)/);
   await expect(page.getByLabel("Название")).toHaveValue("Без названия");
+  await expect(page.getByRole("heading", { name: "Заметка", exact: true })).toBeVisible();
   await expect(
     page.getByLabel("Картинки в заметке").getByRole("button", { name: "Открыть картинку" }),
   ).toBeVisible();
@@ -90,6 +91,8 @@ test("paste a screenshot into a note and open it full size", async ({ page }) =>
   await page.getByRole("button", { name: "Готово" }).click();
   await page.locator(".markdown").getByRole("button", { name: "Открыть картинку" }).click();
   await expect(page.getByRole("dialog").getByRole("img")).toBeVisible();
+  await page.getByRole("button", { name: "Сохранить в файл" }).click();
+  await expect(page.getByText("Картинка сохранена")).toBeVisible();
 });
 
 test("a changed password goes to the history", async ({ page }) => {

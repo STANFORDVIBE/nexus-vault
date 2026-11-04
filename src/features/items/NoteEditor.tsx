@@ -77,6 +77,8 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const idRef = useRef<string | undefined>(itemId);
+  // a new note becomes an existing one at its first autosave
+  const [isNew, setIsNew] = useState(!itemId);
   const savedRef = useRef({ snapshot: JSON.stringify(initial), favorite: initial.favorite });
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
@@ -100,6 +102,7 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
           }
         } else {
           idRef.current = await createItem(input);
+          setIsNew(false);
         }
         savedRef.current = { snapshot, favorite: next.favorite };
         setSaveState("saved");
@@ -235,7 +238,7 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
     <div className="flex h-full flex-col">
       <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-6">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base">{itemId ? "Заметка" : "Новая заметка"}</h2>
+          <h2 className="truncate text-base">{isNew ? "Новая заметка" : "Заметка"}</h2>
           <Button
             type="button"
             variant="ghost"

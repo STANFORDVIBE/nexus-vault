@@ -88,6 +88,8 @@ export const addAttachment = (itemId: string, bytes: Uint8Array) =>
 /** Raw decrypted bytes: `mime length | mime | image`. */
 export const getAttachment = (id: string) =>
   invoke<ArrayBuffer | number[]>("get_attachment", { id });
+/** Unencrypted copy in a file the user picks; `null` if the dialog was cancelled. */
+export const saveAttachment = (id: string) => invoke<string | null>("save_attachment", { id });
 
 // ---- folders ----
 export const listFolders = () => invoke<FolderView[]>("list_folders");

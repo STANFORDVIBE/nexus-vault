@@ -1,12 +1,13 @@
 import { useState } from "react";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
-import { ImageOffIcon } from "lucide-react";
+import { DownloadIcon, ImageOffIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ATTACHMENT_PREFIX, useAttachmentUrl } from "@/features/items/attachments";
 import { errorMessage } from "@/services/errors";
-import { openExternalUrl } from "@/services/vault";
+import { openExternalUrl, saveAttachment } from "@/services/vault";
 
 // Links never navigate the WebView: they open in the system browser through Rust,
 // which allows only http(s). Only the note's own encrypted images are shown;
@@ -57,6 +58,15 @@ export function AttachmentImage({ id, alt, thumbnail }: AttachmentImageProps) {
   const { url, failed } = useAttachmentUrl(id);
   const [open, setOpen] = useState(false);
 
+  async function save() {
+    try {
+      const name = await saveAttachment(id);
+      if (name) toast.success("Картинка сохранена", { description: name });
+    } catch (e) {
+      toast.error(errorMessage(e));
+    }
+  }
+
   if (failed) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground">
@@ -101,8 +111,14 @@ export function AttachmentImage({ id, alt, thumbnail }: AttachmentImageProps) {
           <img
             src={url}
             alt={alt}
-            className="max-h-[88vh] max-w-[calc(95vw-1rem)] rounded-md object-contain"
+            className="max-h-[82vh] max-w-[calc(95vw-1rem)] rounded-md object-contain"
           />
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" size="sm" onClick={() => void save()}>
+              <DownloadIcon />
+              Сохранить в файл
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>

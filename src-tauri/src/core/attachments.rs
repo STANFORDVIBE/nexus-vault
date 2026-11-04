@@ -53,6 +53,23 @@ fn encode(mime: &str, data: &[u8]) -> Zeroizing<Vec<u8>> {
     plain
 }
 
+/// File extension for a stored image type.
+pub fn extension(mime: &str) -> &'static str {
+    match mime {
+        "image/jpeg" => "jpg",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "png",
+    }
+}
+
+/// `(mime, image bytes)` of a decrypted attachment.
+pub fn split_plaintext(plain: &[u8]) -> Option<(&str, &[u8])> {
+    let (&len, rest) = plain.split_first()?;
+    let (mime, data) = rest.split_at_checked(len as usize)?;
+    Some((std::str::from_utf8(mime).ok()?, data))
+}
+
 /// Checks a decrypted attachment has the expected layout (used on restore too).
 pub(crate) fn is_valid_plaintext(plain: &[u8]) -> bool {
     let Some((&len, rest)) = plain.split_first() else {

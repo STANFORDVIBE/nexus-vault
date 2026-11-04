@@ -605,6 +605,11 @@ export function createMockBackend(options: MockOptions = {}) {
       attachments.set(id, stored);
       return id;
     },
+    save_attachment: ({ id }) => {
+      requireUnlocked();
+      if (!attachments.has(id as string)) fail("not_found");
+      return "картинка.png";
+    },
     get_attachment: ({ id }) => {
       requireUnlocked();
       const stored = attachments.get(id as string);
