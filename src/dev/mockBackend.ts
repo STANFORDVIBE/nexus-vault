@@ -405,7 +405,7 @@ export function createMockBackend(options: MockOptions = {}) {
   }
 
   const handlers: Record<string, (args: Record<string, unknown>) => unknown> = {
-    get_app_info: () => ({ name: "Nexus Vault", version: "1.0.1" }),
+    get_app_info: () => ({ name: "Nexus Vault", version: "1.0.2" }),
     get_vault_status: () => status(),
     create_vault: ({ password: pw }) => {
       if (state !== "uninitialized") fail("vault_already_exists");
