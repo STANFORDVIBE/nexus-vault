@@ -6,6 +6,7 @@ import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ATTACHMENT_PREFIX, useAttachmentUrl } from "@/features/items/attachments";
+import { keepBackslashes } from "@/features/items/noteDraft";
 import { errorMessage } from "@/services/errors";
 import { openExternalUrl, saveAttachment } from "@/services/vault";
 
@@ -40,7 +41,7 @@ export function Markdown({ children }: { children: string }) {
   return (
     <div className="markdown text-sm leading-relaxed">
       <ReactMarkdown components={components} urlTransform={urlTransform} skipHtml>
-        {children}
+        {keepBackslashes(children)}
       </ReactMarkdown>
     </div>
   );

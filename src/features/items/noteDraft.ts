@@ -35,3 +35,15 @@ export function applyEdit(text: string, start: number, end: number, edit: Edit) 
   const next = text.slice(0, lineStart) + prefixed + text.slice(end);
   return { text: next, start: lineStart + prefixed.length, end: lineStart + prefixed.length };
 }
+
+// code (fenced or inline) is kept as is: backslashes there are already literal
+const CODE_OR_ESCAPE =
+  /```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|(`+)[^`][\s\S]*?\1|\\[!-/:-@[-`{-~]/g;
+
+/**
+ * Markdown eats a backslash before punctuation (`C:\.tauri` → `C:.tauri`), which mangles
+ * pasted paths and keys. Escaping both characters outside code renders them exactly as typed.
+ */
+export function keepBackslashes(markdown: string): string {
+  return markdown.replace(CODE_OR_ESCAPE, (m) => (m[0] === "\\" ? "\\\\\\" + m[1] : m));
+}
