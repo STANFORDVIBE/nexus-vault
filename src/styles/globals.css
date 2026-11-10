@@ -203,6 +203,15 @@
 
 /* Rendered secure notes (react-markdown output) */
 @layer components {
+  /* long keys/URLs wrap instead of running off the card */
+  .markdown {
+    overflow-wrap: anywhere;
+  }
+  /* pasted plain text keeps its line breaks (Markdown would join them) */
+  .markdown p,
+  .markdown li {
+    white-space: pre-line;
+  }
   .markdown > * + * {
     margin-top: 0.75em;
   }

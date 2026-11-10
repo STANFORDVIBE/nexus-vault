@@ -121,7 +121,9 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
   }, [draft, save]);
 
   const done = useCallback(async () => {
-    await save(draft);
+    // a note with text but no title is kept rather than silently dropped
+    const untitled = !draft.title.trim() && draft.content.trim();
+    await save(untitled ? { ...draft, title: "Без названия" } : draft);
     onDone(idRef.current ?? null);
   }, [draft, save, onDone]);
 
@@ -225,7 +227,9 @@ export function NoteEditor({ itemId, initial, onDone }: NoteEditorProps) {
   const statusText = uploading
     ? "Добавляем картинку…"
     : !draft.title.trim()
-      ? "Укажите название, чтобы сохранить"
+      ? draft.content.trim()
+        ? "Без названия — сохранится по «Готово»"
+        : "Укажите название, чтобы сохранить"
       : saveState === "saving"
         ? "Сохраняем…"
         : saveState === "error"
